@@ -18,7 +18,6 @@ from pathlib import Path
 
 from tunerelay.jsondata import JsonObject
 
-
 WAL_ATTEMPTS = 100
 
 
