@@ -15,6 +15,7 @@ Planning stage. This repository currently contains project and technology notes 
 
 TuneRelay is intended for music the user owns or is otherwise authorized to import. A YouTube URL is used as a discovery/reference link, not as an audio download mechanism.
 
-## Proposed technology
+## Product and technology
 
+See [PRODUCT.md](PRODUCT.md) for the problem, suggested solution, and MVP scope.
 See [TECH-STACK.md](TECH-STACK.md) for the initial stack recommendation and component boundaries.
