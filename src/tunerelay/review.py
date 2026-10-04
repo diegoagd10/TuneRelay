@@ -1,6 +1,7 @@
 """Review actions on a song's draft: edits, cover changes, preview and discard."""
 
 import contextlib
+import json
 import os
 import shutil
 import signal
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from tunerelay import covers, inbox
 from tunerelay.config import Config
+from tunerelay.jsondata import JsonObject
 from tunerelay.store import REVIEWABLE, Proposal, Song, Store
 
 REQUIRED_TEXT = ("title", "artist", "album", "album_artist")
@@ -116,10 +118,8 @@ def preview(cfg: Config, song: Song) -> Path:
     audio = inbox.audio_file(Path(song.folder))
     if audio is None:
         raise ReviewError(f"song {song.id} has no local audio")
-    pid_file = cfg.home / "preview.pid"
-    if pid_file.exists() and pid_file.read_text().strip().isdigit():
-        with contextlib.suppress(OSError):
-            os.kill(int(pid_file.read_text()), signal.SIGTERM)
+    pid_file = cfg.home / "preview.json"
+    _stop_previous_preview(pid_file)
     process = subprocess.Popen(
         [cfg.tools.player, "--no-video", "--", str(audio)],
         stdin=subprocess.DEVNULL,
@@ -127,8 +127,32 @@ def preview(cfg: Config, song: Song) -> Path:
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    pid_file.write_text(str(process.pid))
+    started = _start_time(process.pid)
+    if started is not None:
+        pid_file.write_text(json.dumps({"pid": process.pid, "start": started}))
     return audio
+
+
+def _start_time(pid: int) -> str | None:
+    """When a process started (field 22 of /proc/PID/stat); together with the PID it names one process."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    return stat.rsplit(")", 1)[1].split()[19]
+
+
+def _stop_previous_preview(pid_file: Path) -> None:
+    """Stop the player TuneRelay started last, but only if that PID still names the same process."""
+    try:
+        record = JsonObject.parse(pid_file.read_text())
+    except (OSError, ValueError):
+        return
+    pid, started = record.integer("pid"), record.text("start")
+    if pid is None or started is None or _start_time(pid) != started:
+        return
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGTERM)
 
 
 def history_cover(cfg: Config, song: Song) -> str | None:

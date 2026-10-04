@@ -64,17 +64,20 @@ def download(cfg: Config, video_id: str, folder: Path, on_progress: Callable[[in
         "--",
         canonical_url(video_id),
     ]
-    with subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL
-    ) as process:
-        assert process.stdout is not None  # noqa: S101 - guaranteed by stdout=PIPE
-        last = -1
-        for line in process.stdout:
-            match = PROGRESS.search(line)
-            if match and int(match.group(1)) != last:
-                last = int(match.group(1))
-                on_progress(last)
-        stderr = process.stderr.read() if process.stderr else ""
+    try:
+        with subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL
+        ) as process:
+            assert process.stdout is not None  # noqa: S101 - guaranteed by stdout=PIPE
+            last = -1
+            for line in process.stdout:
+                match = PROGRESS.search(line)
+                if match and int(match.group(1)) != last:
+                    last = int(match.group(1))
+                    on_progress(last)
+            stderr = process.stderr.read() if process.stderr else ""
+    except OSError as error:
+        return f"cannot run yt-dlp ({cfg.tools.ytdlp}): {error}"
     if process.returncode != 0:
         lines = [line for line in stderr.splitlines() if line.strip()]
         return lines[-1] if lines else f"yt-dlp exited with {process.returncode}"

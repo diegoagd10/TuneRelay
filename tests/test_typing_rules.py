@@ -1,8 +1,13 @@
 """D-10: one concrete type per variable.
 
 No `Any` or `object` in annotations, and no unions of unrelated types: only
-`X | None` is allowed. `jsondata.py` is the single exception for `Any`, because
-it is where untyped JSON/TOML enters the program.
+`X | None` is allowed.
+
+Recorded exception (design D-10): `jsondata.py` may use `Any`, and only `Any`.
+`json.loads` and `tomllib.loads` return untyped data, and under strict pyright
+narrowing it (`isinstance(value, list)`) yields `Unknown` element types, so the
+boundary needs one declared `Any`. Every getter there returns one concrete type
+or `None`, so nothing untyped leaves that module.
 """
 
 import ast
@@ -11,7 +16,7 @@ from pathlib import Path
 import pytest
 
 SOURCES = sorted((Path(__file__).parent.parent / "src" / "tunerelay").glob("*.py"))
-ANY_ALLOWED = {"jsondata.py"}
+JSON_BOUNDARY = {"jsondata.py"}
 BANNED_NAMES = {"Any", "object"}
 
 
@@ -65,7 +70,7 @@ def violations(source: str, *, any_allowed: bool = False) -> list[str]:
                 if isinstance(node, ast.Attribute)
                 else ""
             )
-            if name in BANNED_NAMES and not any_allowed:
+            if name in BANNED_NAMES and not (any_allowed and name == "Any"):
                 problems.append(f"line {node.lineno}: `{name}` in annotation")
             if name in {"Union", "Optional"}:
                 problems.append(f"line {node.lineno}: use `X | None` instead of `{name}`")
@@ -78,7 +83,13 @@ def violations(source: str, *, any_allowed: bool = False) -> list[str]:
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda path: path.name)
 def test_source_files_use_one_concrete_type_per_variable(path: Path) -> None:
-    assert violations(path.read_text(), any_allowed=path.name in ANY_ALLOWED) == []
+    assert violations(path.read_text(), any_allowed=path.name in JSON_BOUNDARY) == []
+
+
+def test_the_json_boundary_exception_covers_only_any() -> None:
+    assert violations("x: dict[str, Any] = {}", any_allowed=True) == []
+    assert violations("x: dict[str, object] = {}", any_allowed=True) == ["line 1: `object` in annotation"]
+    assert violations("x: int | str = 1", any_allowed=True) == ["line 1: mixed union `int | str`"]
 
 
 @pytest.mark.parametrize(

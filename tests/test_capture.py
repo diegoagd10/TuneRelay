@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from conftest import TuneRelay
@@ -114,3 +116,22 @@ def test_a_download_without_m4a_audio_fails(tr: TuneRelay) -> None:
         tr.wait_for_state(reply["song"]["id"], "download_failed")["error"]
         == "yt-dlp did not produce an M4A file"
     )
+
+
+def test_simultaneous_captures_of_one_video_accept_only_one(tr: TuneRelay) -> None:
+    tr.env["FAKE_YTDLP_DELAY"] = "1"
+    for video_id in ("aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"):
+        url = f"https://youtu.be/{video_id}"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            replies = list(pool.map(tr.host, [{"url": url}, {"url": url}]))
+        assert sorted(reply["status"] for reply in replies) == ["accepted", "duplicate"]
+
+
+def test_a_missing_downloader_is_a_notified_download_failure(tr: TuneRelay) -> None:
+    tr.configure("tools", ytdlp=str(tr.root / "no-such-yt-dlp"))
+
+    reply = tr.host({"url": "https://youtu.be/dQw4w9WgXcQ"})
+
+    song = tr.wait_for_state(reply["song"]["id"], "download_failed")
+    assert song["error"].startswith("cannot run yt-dlp")
+    assert tr.notifications()[-1].startswith("Download failed | https://www.youtube.com/watch?v=dQw4w9WgXcQ")

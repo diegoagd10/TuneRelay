@@ -119,7 +119,10 @@ def load() -> Config:
     if not path.exists():
         path.write_text(DEFAULT_CONFIG)
     defaults = JsonObject(tomllib.loads(DEFAULT_CONFIG))
-    data = JsonObject(tomllib.loads(path.read_text()))
+    try:
+        data = JsonObject(tomllib.loads(path.read_text()))
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"config.toml is not valid TOML: {error}") from error
 
     def section(name: str) -> JsonObject:
         return data.obj(name) or JsonObject({})

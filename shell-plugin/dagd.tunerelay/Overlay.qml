@@ -45,6 +45,10 @@ Item {
 
   function close() { root.opened = false }
 
+  // Taking focus away from a TextInput fires its editingFinished, so a pending edit
+  // is queued (and the run queue is FIFO) before whatever action was clicked.
+  function commitEditors() { keys.forceActiveFocus() }
+
   function dismiss() {
     root.opened = false
     if (root.shell) root.shell.hide(root.pluginId)
@@ -146,7 +150,10 @@ Item {
     MouseArea {
       anchors.fill: parent
       cursorShape: Qt.PointingHandCursor
-      onClicked: action.clicked()
+      onClicked: {
+        root.commitEditors()
+        action.clicked()
+      }
     }
   }
 
@@ -251,6 +258,7 @@ Item {
             Repeater {
               model: ["review", "queue", "history"]
               Label {
+                id: tabLabel
                 required property string modelData
                 text: modelData === root.tab ? "[" + Strings.tabs[modelData] + "]" : Strings.tabs[modelData]
                 color: modelData === root.tab ? root.accent : root.foreground
@@ -259,7 +267,7 @@ Item {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
                   onClicked: {
-                    root.tab = parent.modelData
+                    root.tab = tabLabel.modelData
                     root.refresh()
                   }
                 }
@@ -302,6 +310,7 @@ Item {
               Repeater {
                 model: root.status.review_songs || []
                 Label {
+                  id: waitingLabel
                   required property var modelData
                   text: (modelData.id === root.songId ? "▸ " : "") + modelData.artist + " - " + modelData.title
                   color: modelData.id === root.songId ? root.accent : root.foreground
@@ -309,7 +318,7 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                      root.songId = parent.modelData.id
+                      root.songId = waitingLabel.modelData.id
                       root.refresh()
                     }
                   }
@@ -397,7 +406,10 @@ Item {
                   MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.songAction(["select", String(root.song.id), String(proposalCard.index)])
+                    onClicked: {
+                      root.commitEditors()
+                      root.songAction(["select", String(root.song.id), String(proposalCard.index)])
+                    }
                   }
                 }
               }
@@ -405,48 +417,49 @@ Item {
 
             // Edit form for the draft.
             Column {
+              id: editForm
               visible: !!root.song && !!root.song.draft
               spacing: root.gap / 2
               readonly property var draft: root.song && root.song.draft ? root.song.draft : ({})
 
               Row {
                 spacing: root.gap * 2
-                Field { label: Strings.fields.title; value: parent.parent.draft.title || ""; inputWidth: 280; onCommitted: function(t) { root.edit("title", t) } }
-                Field { label: Strings.fields.artist; value: parent.parent.draft.artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("artist", t) } }
+                Field { label: Strings.fields.title; value: editForm.draft.title || ""; inputWidth: 280; onCommitted: function(t) { root.edit("title", t) } }
+                Field { label: Strings.fields.artist; value: editForm.draft.artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("artist", t) } }
               }
               Row {
                 spacing: root.gap * 2
-                Field { label: Strings.fields.album; value: parent.parent.draft.album || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album", t) } }
-                Field { label: Strings.fields.album_artist; value: parent.parent.draft.album_artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album_artist", t) } }
+                Field { label: Strings.fields.album; value: editForm.draft.album || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album", t) } }
+                Field { label: Strings.fields.album_artist; value: editForm.draft.album_artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album_artist", t) } }
               }
               Field {
                 label: Strings.fields.artists
-                value: (parent.draft.artists || []).join("; ")
+                value: (editForm.draft.artists || []).join("; ")
                 placeholder: Strings.artistsHint
                 inputWidth: 668
                 onCommitted: function(t) { root.edit("artists", t) }
               }
               Row {
                 spacing: root.gap
-                Field { label: Strings.fields.track; value: String(parent.parent.draft.track || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track", t) } }
-                Field { label: Strings.of; value: String(parent.parent.draft.track_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track_total", t) } }
-                Field { label: Strings.fields.disc; value: String(parent.parent.draft.disc || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc", t) } }
-                Field { label: Strings.of; value: String(parent.parent.draft.disc_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc_total", t) } }
-                Field { label: Strings.fields.year; value: parent.parent.draft.year === null || parent.parent.draft.year === undefined ? "" : String(parent.parent.draft.year); inputWidth: 60; onCommitted: function(t) { root.edit("year", t) } }
-                Field { label: Strings.fields.genre; value: parent.parent.draft.genre || ""; inputWidth: 140; onCommitted: function(t) { root.edit("genre", t) } }
+                Field { label: Strings.fields.track; value: String(editForm.draft.track || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track", t) } }
+                Field { label: Strings.of; value: String(editForm.draft.track_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track_total", t) } }
+                Field { label: Strings.fields.disc; value: String(editForm.draft.disc || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc", t) } }
+                Field { label: Strings.of; value: String(editForm.draft.disc_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc_total", t) } }
+                Field { label: Strings.fields.year; value: editForm.draft.year === null || editForm.draft.year === undefined ? "" : String(editForm.draft.year); inputWidth: 60; onCommitted: function(t) { root.edit("year", t) } }
+                Field { label: Strings.fields.genre; value: editForm.draft.genre || ""; inputWidth: 140; onCommitted: function(t) { root.edit("genre", t) } }
               }
               Row {
                 spacing: root.gap
-                Field { label: Strings.fields.mbid_recording; value: (parent.parent.draft.mbids || {}).recording || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_recording", t) } }
-                Field { label: Strings.fields.mbid_release; value: (parent.parent.draft.mbids || {}).release || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_release", t) } }
-                Field { label: Strings.fields.mbid_artist; value: (parent.parent.draft.mbids || {}).artist || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_artist", t) } }
+                Field { label: Strings.fields.mbid_recording; value: (editForm.draft.mbids || {}).recording || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_recording", t) } }
+                Field { label: Strings.fields.mbid_release; value: (editForm.draft.mbids || {}).release || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_release", t) } }
+                Field { label: Strings.fields.mbid_artist; value: (editForm.draft.mbids || {}).artist || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_artist", t) } }
               }
               Row {
                 spacing: root.gap
                 Label { width: 96; text: Strings.fields.compilation; opacity: 0.7; anchors.verticalCenter: parent.verticalCenter }
                 Action {
-                  label: parent.parent.draft.compilation ? "☑" : "☐"
-                  onClicked: root.edit("compilation", parent.parent.draft.compilation ? "false" : "true")
+                  label: editForm.draft.compilation ? "☑" : "☐"
+                  onClicked: root.edit("compilation", editForm.draft.compilation ? "false" : "true")
                 }
               }
 
@@ -458,7 +471,7 @@ Item {
                   width: Style.space(48)
                   height: width
                   fillMode: Image.PreserveAspectCrop
-                  source: parent.parent.draft.cover ? "file://" + parent.parent.draft.cover : ""
+                  source: editForm.draft.cover ? "file://" + editForm.draft.cover : ""
                   cache: false
                 }
                 Action {
@@ -579,40 +592,41 @@ Item {
           Repeater {
             model: root.historySongs
             Row {
+              id: historyRow
               required property var modelData
               spacing: root.gap
               Image {
                 width: Style.space(40)
                 height: width
                 fillMode: Image.PreserveAspectCrop
-                source: parent.modelData.cover ? "file://" + parent.modelData.cover : ""
+                source: historyRow.modelData.cover ? "file://" + historyRow.modelData.cover : ""
               }
               Column {
                 anchors.verticalCenter: parent.verticalCenter
                 Label {
-                  text: (Strings.stateIcons[parent.parent.modelData.state] || "") + " " + Strings.states[parent.parent.modelData.state]
-                    + "   " + (parent.parent.modelData.title
-                      ? parent.parent.modelData.artist + " - " + parent.parent.modelData.title
-                      : parent.parent.modelData.youtube_title)
-                    + (parent.parent.modelData.album ? " · " + parent.parent.modelData.album : "")
-                    + "   " + String(parent.parent.modelData.updated_at).slice(0, 10)
+                  text: (Strings.stateIcons[historyRow.modelData.state] || "") + " " + Strings.states[historyRow.modelData.state]
+                    + "   " + (historyRow.modelData.title
+                      ? historyRow.modelData.artist + " - " + historyRow.modelData.title
+                      : historyRow.modelData.youtube_title)
+                    + (historyRow.modelData.album ? " · " + historyRow.modelData.album : "")
+                    + "   " + String(historyRow.modelData.updated_at).slice(0, 10)
                 }
                 Label {
-                  visible: !!parent.parent.modelData.remote_path || !!parent.parent.modelData.error
-                  text: parent.parent.modelData.remote_path || parent.parent.modelData.error || ""
+                  visible: !!historyRow.modelData.remote_path || !!historyRow.modelData.error
+                  text: historyRow.modelData.remote_path || historyRow.modelData.error || ""
                   opacity: 0.7
                 }
               }
               Action {
-                visible: !!parent.modelData.url
+                visible: !!historyRow.modelData.url
                 label: Strings.openYoutube
-                onClicked: Qt.openUrlExternally(parent.modelData.url)
+                onClicked: Qt.openUrlExternally(historyRow.modelData.url)
               }
               Action {
-                visible: parent.modelData.state === "failed"
+                visible: historyRow.modelData.state === "failed"
                 label: Strings.retry
                 primary: true
-                onClicked: root.run(["retry", String(parent.modelData.id)], function() { root.loadHistory() })
+                onClicked: root.run(["retry", String(historyRow.modelData.id)], function() { root.loadHistory() })
               }
             }
           }

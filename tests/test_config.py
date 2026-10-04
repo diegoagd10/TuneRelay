@@ -73,3 +73,15 @@ def test_an_unreadable_password_is_reported(tr: TuneRelay) -> None:
         tr.notifications()[-1]
         == "Navidrome scan failed | could not read the password from pass entry navidrome"
     )
+
+
+def test_a_malformed_config_is_reported_as_a_json_error(tr: TuneRelay) -> None:
+    (tr.home / "config.toml").write_text("[delivery\ntransport = 'ssh'\n")
+
+    assert tr.cli_error("status").startswith("config.toml is not valid TOML")
+
+
+def test_an_unusable_database_is_reported_as_a_json_error(tr: TuneRelay) -> None:
+    (tr.home / "tunerelay.db").write_text("this is not a database" * 100)
+
+    assert tr.cli_error("status").startswith("cannot open the TuneRelay database")

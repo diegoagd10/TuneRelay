@@ -8,6 +8,7 @@ one of the allowed source states, so concurrent writers cannot skip the lifecycl
 import json
 import os
 import sqlite3
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -16,6 +17,9 @@ from enum import StrEnum
 from pathlib import Path
 
 from tunerelay.jsondata import JsonObject
+
+
+WAL_ATTEMPTS = 100
 
 
 class State(StrEnum):
@@ -229,21 +233,40 @@ def _haystack(song: Song) -> str:
 
 class Store:
     def __init__(self, path: Path) -> None:
-        self._db = sqlite3.connect(path, timeout=30, isolation_level=None)
-        self._db.row_factory = sqlite3.Row
+        try:
+            self._db = sqlite3.connect(path, timeout=30, isolation_level=None)
+            self._db.row_factory = sqlite3.Row
+            self._enable_wal()
+            self._db.executescript(SCHEMA)
+        except sqlite3.DatabaseError as error:
+            raise StoreError(f"cannot open the TuneRelay database {path}: {error}") from error
+
+    def _enable_wal(self) -> None:
+        """Switch a new database to WAL. The switch needs an exclusive lock and ignores the busy
+        timeout, so two processes creating the database at once retry instead of failing."""
+        for _ in range(WAL_ATTEMPTS):
+            try:
+                self._db.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError as error:
+                if "locked" not in str(error):
+                    raise
+                time.sleep(0.05)
+            else:
+                return
         self._db.execute("PRAGMA journal_mode=WAL")
-        self._db.executescript(SCHEMA)
 
     def close(self) -> None:
         self._db.close()
 
     @contextmanager
     def _write(self) -> Generator[sqlite3.Connection]:
-        """One IMMEDIATE transaction that also bumps the change version."""
+        """One IMMEDIATE transaction; it bumps the change version only if it changed something."""
         self._db.execute("BEGIN IMMEDIATE")
         try:
+            changes = self._db.total_changes
             yield self._db
-            self._db.execute("UPDATE meta SET version = version + 1")
+            if self._db.total_changes != changes:
+                self._db.execute("UPDATE meta SET version = version + 1")
             self._db.execute("COMMIT")
         except BaseException:
             self._db.execute("ROLLBACK")
@@ -293,8 +316,14 @@ class Store:
 
     # Capture
 
-    def claim_capture(self, video_id: str, url: str, folder: Path) -> CaptureResult:
-        """Register a new download unless the video is already known (and not discarded or failed)."""
+    def claim_capture(
+        self, video_id: str, url: str, folder: Path, owner_pid: int | None = None
+    ) -> CaptureResult:
+        """Register a new download unless the video is already known (and not discarded or failed).
+
+        `owner_pid` is the process that will start the download worker. It holds the reservation
+        until `set_worker` hands it to the worker, so a concurrent capture sees a live owner rather
+        than an abandoned row."""
         with self._write() as db:
             existing = self.find_video(video_id)
             stale = (
@@ -305,9 +334,9 @@ class Store:
             now = _now()
             if existing is None:
                 cursor = db.execute(
-                    "INSERT INTO songs (video_id, url, state, folder, created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?)",
-                    (video_id, url, State.DOWNLOADING, str(folder), now, now),
+                    "INSERT INTO songs (video_id, url, state, folder, worker_pid, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (video_id, url, State.DOWNLOADING, str(folder), owner_pid, now, now),
                 )
                 song_id = cursor.lastrowid or 0
             else:
@@ -315,10 +344,10 @@ class Store:
                 db.execute(
                     "UPDATE songs SET url = ?, state = ?, folder = ?, youtube = NULL, proposals = '[]',"
                     " selected = NULL, draft = NULL, progress = NULL, attempts = 0, error = NULL,"
-                    " worker_pid = NULL, remote_path = NULL, history_cover = NULL, overwrite = 0,"
+                    " worker_pid = ?, remote_path = NULL, history_cover = NULL, overwrite = 0,"
                     " created_at = ?, updated_at = ?"
                     " WHERE id = ?",
-                    (url, State.DOWNLOADING, str(folder), now, now, song_id),
+                    (url, State.DOWNLOADING, str(folder), owner_pid, now, now, song_id),
                 )
         return CaptureResult(accepted=True, song=self._find(song_id))
 

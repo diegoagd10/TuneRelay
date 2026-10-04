@@ -83,7 +83,9 @@ def capture(cfg: config.Config, url: str) -> Reply:
     store = Store(cfg.database)
     try:
         folder = cfg.inbox / video_id
-        result: CaptureResult = store.claim_capture(video_id, youtube.canonical_url(video_id), folder)
+        result: CaptureResult = store.claim_capture(
+            video_id, youtube.canonical_url(video_id), folder, owner_pid=os.getpid()
+        )
     finally:
         store.close()
     if not result.accepted:

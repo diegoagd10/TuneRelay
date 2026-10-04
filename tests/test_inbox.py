@@ -71,3 +71,29 @@ def test_a_download_whose_worker_died_is_failed_on_restart_and_can_be_captured_a
     assert tr.song(reply["song"]["id"])["state"] == "download_failed"
     del tr.env["FAKE_YTDLP_DELAY"]
     assert tr.capture() == reply["song"]["id"]
+
+
+def test_only_one_daemon_works_at_a_time(tr: TuneRelay) -> None:
+    song_id = tr.capture()
+    tr.env["FAKE_CODEX_MODE"] = "hang"
+    tr.configure("codex", timeout=60)
+    first = subprocess.Popen([str(BIN / "tunerelay"), "daemon"], env=tr.env)
+    try:
+        tr.wait_for_state(song_id, "processing")
+
+        assert tr.cli_error("daemon", "--once") == "another TuneRelay daemon is running"
+        assert tr.song(song_id)["state"] == "processing"
+        assert len(tr.calls("codex")) == 1
+    finally:
+        first.kill()
+        first.wait()
+
+
+def test_an_idle_daemon_does_not_report_changes(tr: TuneRelay) -> None:
+    tr.daemon_once()
+    before = tr.cli("status")["version"]
+
+    tr.daemon_once()
+    tr.daemon_once()
+
+    assert tr.cli("status")["version"] == before

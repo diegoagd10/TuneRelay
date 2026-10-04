@@ -1,7 +1,10 @@
 """The background worker: adopts ready inbox folders, processes and delivers one song at a time."""
 
+import fcntl
 import shutil
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from mutagen import MutagenError
@@ -106,7 +109,27 @@ def step(cfg: Config, store: Store) -> bool:
     return False
 
 
+class DaemonBusyError(Exception):
+    """Another daemon already owns the worker (processing is strictly one song at a time)."""
+
+
+@contextmanager
+def exclusive(cfg: Config) -> Generator[None]:
+    """Hold the daemon lock for the worker's lifetime; the kernel drops it if the process dies."""
+    with (cfg.home / "daemon.lock").open("w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise DaemonBusyError("another TuneRelay daemon is running") from error
+        yield
+
+
 def run(cfg: Config, *, once: bool) -> None:
+    with exclusive(cfg):
+        _work(cfg, once=once)
+
+
+def _work(cfg: Config, *, once: bool) -> None:
     store = Store(cfg.database)
     try:
         store.recover()

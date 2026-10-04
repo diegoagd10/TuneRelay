@@ -42,6 +42,11 @@ uv run pytest      # end-to-end tests against fakes in tests/fakes/
 uv run check       # quality gate: lock, ruff, format, pyright, deptry, pip-audit, tests (coverage >= 95%)
 ```
 
+The quality gate also enforces design decision D-10: one concrete type per
+variable (no `Any`/`object`, no mixed unions, only `X | None`). The single
+recorded exception is `src/tunerelay/jsondata.py`, the JSON/TOML boundary,
+which may declare `Any`.
+
 Tests drive the real `tunerelay` / `tunerelay-host` executables. yt-dlp,
 Codex, ssh/rsync, notify-send, the OSD and `pass` are replaced by the fake
 executables in `tests/fakes/`, selected through `config.toml`.

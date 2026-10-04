@@ -185,16 +185,6 @@ def test_a_proposal_missing_required_fields_cannot_be_confirmed(tr: TuneRelay) -
     assert tr.song(song_id)["state"] == "ready_for_review"
 
 
-def test_a_new_preview_stops_the_previous_one(tr: TuneRelay) -> None:
-    song_id = tr.ready_for_review()
-    sleeper = subprocess.Popen(["sleep", "60"])
-    (tr.home / "preview.pid").write_text(str(sleeper.pid))
-
-    tr.cli("preview", str(song_id))
-
-    assert sleeper.wait(timeout=5) != 0
-
-
 def test_a_manual_drop_has_no_thumbnail_to_fall_back_to(tr: TuneRelay) -> None:
     folder = tr.inbox / "rain"
     folder.mkdir(parents=True)
@@ -206,3 +196,31 @@ def test_a_manual_drop_has_no_thumbnail_to_fall_back_to(tr: TuneRelay) -> None:
     assert tr.cli_error("cover", str(song["id"]), "--thumbnail") == "this song has no thumbnail"
     assert tr.cli("discard", str(song["id"]))["history_cover"] is None
     assert tr.cli_error("preview", str(song["id"])) == f"song {song['id']} has no local audio"
+
+
+def test_preview_stops_the_previous_preview_player(tr: TuneRelay) -> None:
+    tr.configure("tools", player=str(FAKES / "slow-player"))
+    song_id = tr.ready_for_review()
+    tr.cli("preview", str(song_id))
+    wait_until(lambda: len(tr.calls("slow-player")) == 1)
+    first = tr.calls("slow-player")[0]["pid"]
+
+    tr.cli("preview", str(song_id))
+
+    wait_until(
+        lambda: (
+            not Path(f"/proc/{first}").exists() or "Z" in Path(f"/proc/{first}/stat").read_text().split()[2]
+        )
+    )
+
+
+def test_preview_never_signals_a_process_it_did_not_start(tr: TuneRelay) -> None:
+    song_id = tr.ready_for_review()
+    unrelated = subprocess.Popen(["sleep", "60"])
+    (tr.home / "preview.pid").write_text(str(unrelated.pid))
+
+    tr.cli("preview", str(song_id))
+
+    assert unrelated.poll() is None
+    unrelated.kill()
+    unrelated.wait()

@@ -2,6 +2,7 @@
 """Fake rsync: copies `src user@host:dest` locally. Hosts in $FAKE_SSH_DOWN are unreachable.
 
 FAKE_RSYNC_CORRUPT=1 writes a truncated copy, to exercise verification.
+FAKE_RSYNC_RACE=1 also creates the final destination (another import) while "copying".
 """
 
 import json
@@ -22,3 +23,8 @@ if os.environ.get("FAKE_RSYNC_CORRUPT"):
         copy.write(source.read()[:-10])
 else:
     shutil.copyfile(src, path)
+name = os.path.basename(path)
+if os.environ.get("FAKE_RSYNC_RACE") and name.startswith(".") and name.endswith(".tunerelay-part"):
+    final = os.path.join(os.path.dirname(path), name[1 : -len(".tunerelay-part")])
+    with open(final, "wb") as other:
+        other.write(b"raced")

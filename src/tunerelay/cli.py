@@ -13,6 +13,7 @@ import typer
 
 from tunerelay import config, review
 from tunerelay.config import Config, ConfigError
+from tunerelay.daemon import DaemonBusyError
 from tunerelay.daemon import run as run_daemon
 from tunerelay.store import IN_FLIGHT, REVIEWABLE, Proposal, Song, State, Store, StoreError
 
@@ -113,15 +114,18 @@ def to_json(value: "DataclassInstance") -> str:
 
 @contextmanager
 def session() -> Generator[tuple[Config, Store]]:
-    cfg = config.load()
-    store = Store(cfg.database)
+    """Config and store for one command; expected failures become one {"error": ...} line and exit 1."""
+    store: Store | None = None
     try:
+        cfg = config.load()
+        store = Store(cfg.database)
         yield cfg, store
-    except (StoreError, ConfigError, CommandError, review.ReviewError) as error:
+    except (StoreError, ConfigError, CommandError, review.ReviewError, DaemonBusyError) as error:
         emit(to_json(ErrorOutput(error=str(error))))
         raise typer.Exit(1) from error
     finally:
-        store.close()
+        if store is not None:
+            store.close()
 
 
 def status_of(cfg: Config, store: Store) -> StatusOutput:
@@ -290,8 +294,9 @@ def history(
 
 @app.command()
 def daemon(once: Annotated[bool, typer.Option(help="Exit when there is no work left")] = False) -> None:
-    """Run the background worker (processing and delivery)."""
-    run_daemon(config.load(), once=once)
+    """Run the background worker (processing and delivery). Only one may run at a time."""
+    with session() as (cfg, _store):
+        run_daemon(cfg, once=once)
 
 
 def main() -> None:

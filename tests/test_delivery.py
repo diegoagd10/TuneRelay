@@ -352,3 +352,17 @@ def test_a_corrupt_audio_file_fails_delivery_without_crashing_the_daemon(tr: Tun
 
     assert tr.song(song["id"])["state"] == "failed"
     assert tr.song(song["id"])["error"].startswith("cannot tag the audio")
+
+
+def test_a_file_created_at_the_destination_during_the_copy_is_never_overwritten(tr: TuneRelay) -> None:
+    music = tr.root / "music"
+    music.mkdir()
+    use_ssh(tr, music)
+    tr.env["FAKE_RSYNC_RACE"] = "1"
+    song_id = confirmed(tr)
+
+    tr.daemon_once()
+
+    assert tr.song(song_id)["state"] == "conflict"
+    assert (music / DEAD_END).read_bytes() == b"raced"
+    assert sorted(p.name for p in (music / DEAD_END).parent.iterdir()) == [DEAD_END.name]

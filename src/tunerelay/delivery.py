@@ -6,6 +6,7 @@ conflict and a bad copy never reaches the library.
 """
 
 import hashlib
+import os
 import re
 import shlex
 import shutil
@@ -46,7 +47,11 @@ class Transport(Protocol):
     def put(self, local: Path, path: PurePosixPath) -> None: ...
     def size(self, path: PurePosixPath) -> int: ...
     def checksum(self, path: PurePosixPath) -> str: ...
-    def move(self, source: PurePosixPath, dest: PurePosixPath) -> None: ...
+    def publish(self, source: PurePosixPath, dest: PurePosixPath, *, overwrite: bool) -> bool:
+        """Atomically rename `source` to `dest`. Without `overwrite`, returns False (and leaves
+        `source` in place) if `dest` exists, even if it appeared a moment ago."""
+        ...
+
     def remove(self, path: PurePosixPath) -> None: ...
 
 
@@ -72,7 +77,8 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _send_verified(transport: Transport, local: Path, dest: PurePosixPath) -> None:
+def _send_verified(transport: Transport, local: Path, dest: PurePosixPath, *, overwrite: bool) -> bool:
+    """Copy, verify, then publish. Returns False if `dest` appeared and `overwrite` is not allowed."""
     temporary = dest.with_name(f".{dest.name}.tunerelay-part")
     transport.put(local, temporary)
     expected_size, expected_sum = local.stat().st_size, sha256(local)
@@ -82,7 +88,10 @@ def _send_verified(transport: Transport, local: Path, dest: PurePosixPath) -> No
         raise DeliveryError(
             f"verification failed for {dest}: sent {expected_size} bytes, server has {remote_size} bytes"
         )
-    transport.move(temporary, dest)
+    if transport.publish(temporary, dest, overwrite=overwrite):
+        return True
+    transport.remove(temporary)
+    return False
 
 
 def _same_file(transport: Transport, local: Path, remote: PurePosixPath) -> bool:
@@ -96,14 +105,15 @@ def deliver(
     (the path the user chose to replace); a byte-identical one means an earlier attempt already got there."""
     dest = destination_path(proposal)
     overwrite = dest == replace
-    if transport.exists(dest) and not overwrite:
-        if not _same_file(transport, audio, dest):
-            return DeliveryResult(DeliveryOutcome.CONFLICT, dest)
-    else:
-        _send_verified(transport, audio, dest)
+    already_there = transport.exists(dest) and not overwrite
+    if not already_there and not _send_verified(transport, audio, dest, overwrite=overwrite):
+        already_there = True  # another file appeared at the destination during the copy
+    if already_there and not _same_file(transport, audio, dest):
+        return DeliveryResult(DeliveryOutcome.CONFLICT, dest)
     cover_dest = dest.parent / COVER_NAME
     if proposal.cover and Path(proposal.cover).exists() and (overwrite or not transport.exists(cover_dest)):
-        _send_verified(transport, Path(proposal.cover), cover_dest)
+        # A folder cover that appears meanwhile belongs to someone else; keeping it is fine.
+        _send_verified(transport, Path(proposal.cover), cover_dest, overwrite=overwrite)
     return DeliveryResult(DeliveryOutcome.DELIVERED, dest)
 
 
@@ -135,8 +145,17 @@ class LocalTransport:
     def checksum(self, path: PurePosixPath) -> str:
         return sha256(self._path(path))
 
-    def move(self, source: PurePosixPath, dest: PurePosixPath) -> None:
-        self._path(source).replace(self._path(dest))
+    def publish(self, source: PurePosixPath, dest: PurePosixPath, *, overwrite: bool) -> bool:
+        if overwrite:
+            self._path(source).replace(self._path(dest))
+            return True
+        try:
+            # link(2) refuses an existing target atomically, unlike rename(2).
+            os.link(self._path(source), self._path(dest))
+        except FileExistsError:
+            return False
+        self._path(source).unlink()
+        return True
 
     def remove(self, path: PurePosixPath) -> None:
         self._path(path).unlink(missing_ok=True)
@@ -230,8 +249,17 @@ class SshTransport:
     def checksum(self, path: PurePosixPath) -> str:
         return self._checked("sha256sum", "--", self._full(path)).split()[0]
 
-    def move(self, source: PurePosixPath, dest: PurePosixPath) -> None:
-        self._checked("mv", "-f", "--", self._full(source), self._full(dest))
+    def publish(self, source: PurePosixPath, dest: PurePosixPath, *, overwrite: bool) -> bool:
+        if overwrite:
+            self._checked("mv", "-f", "--", self._full(source), self._full(dest))
+            return True
+        # `ln` (link(2)) refuses an existing target atomically, unlike `mv`.
+        if self._remote("ln", "-T", "--", self._full(source), self._full(dest)).returncode != 0:
+            if self.exists(dest):
+                return False
+            raise DeliveryError(f"could not publish {dest} on the server")
+        self._checked("rm", "-f", "--", self._full(source))
+        return True
 
     def remove(self, path: PurePosixPath) -> None:
         self._checked("rm", "-f", "--", self._full(path))
