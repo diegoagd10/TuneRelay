@@ -16,7 +16,7 @@ var defaultProposal = "YouTube (default)"
 var codexProposal = function(confidence) { return "Codex " + Number(confidence).toFixed(2) }
 var noSources = "—"
 var conflict = "Already exists in Navidrome"
-var conflictHint = "Replace the file on the server, or discard this song."
+var conflictHint = "Replace the file on the server, edit the metadata and confirm, or discard this song."
 
 var fields = {
   title: "Title",
@@ -28,7 +28,10 @@ var fields = {
   disc: "Disc",
   year: "Year",
   genre: "Genre",
-  compilation: "Compilation"
+  compilation: "Compilation",
+  mbid_recording: "MB recording",
+  mbid_release: "MB release",
+  mbid_artist: "MB artist"
 }
 var of = "/"
 var artistsHint = "Separate artists with ;"

@@ -2,7 +2,9 @@
 
 import shutil
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+from mutagen import MutagenError
 
 from tunerelay import covers, delivery, inbox, notify, proposals, resolver, review, scanner, tagger
 from tunerelay.config import Config, ConfigError
@@ -53,8 +55,12 @@ def attempt_delivery(song: Song, transport: delivery.Transport) -> delivery.Deli
     audio = inbox.audio_file(Path(song.folder))
     if audio is None or song.draft is None:
         raise DeliveryError("the local audio is missing")
-    tagger.write(audio, song.draft)
-    return delivery.deliver(audio, song.draft, transport, overwrite=song.overwrite)
+    try:
+        tagger.write(audio, song.draft)
+    except MutagenError as error:
+        raise DeliveryError(f"cannot tag the audio: {error}") from error
+    replace = PurePosixPath(song.remote_path) if song.overwrite and song.remote_path else None
+    return delivery.deliver(audio, song.draft, transport, replace=replace)
 
 
 def deliver(cfg: Config, store: Store, song: Song) -> None:

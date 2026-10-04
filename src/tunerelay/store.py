@@ -6,6 +6,7 @@ one of the allowed source states, so concurrent writers cannot skip the lifecycl
 """
 
 import json
+import os
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -124,6 +125,7 @@ class Song:
     remote_path: str | None
     history_cover: str | None
     overwrite: bool
+    worker_pid: int | None
     created_at: str
     updated_at: str
 
@@ -151,6 +153,7 @@ CREATE TABLE IF NOT EXISTS songs (
     remote_path TEXT,
     history_cover TEXT,
     overwrite INTEGER NOT NULL DEFAULT 0,
+    worker_pid INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -190,9 +193,23 @@ def _song(row: sqlite3.Row) -> Song:
         remote_path=row["remote_path"],
         history_cover=row["history_cover"],
         overwrite=bool(row["overwrite"]),
+        worker_pid=row["worker_pid"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _worker_alive(song: Song) -> bool:
+    """Whether the detached download worker of a `downloading` song is still running."""
+    if song.worker_pid is None:
+        return False
+    try:
+        os.kill(song.worker_pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _haystack(song: Song) -> str:
@@ -280,7 +297,10 @@ class Store:
         """Register a new download unless the video is already known (and not discarded or failed)."""
         with self._write() as db:
             existing = self.find_video(video_id)
-            if existing is not None and existing.state not in RECAPTURABLE:
+            stale = (
+                existing is not None and existing.state == State.DOWNLOADING and not _worker_alive(existing)
+            )
+            if existing is not None and existing.state not in RECAPTURABLE and not stale:
                 return CaptureResult(accepted=False, song=existing)
             now = _now()
             if existing is None:
@@ -295,11 +315,16 @@ class Store:
                 db.execute(
                     "UPDATE songs SET url = ?, state = ?, folder = ?, youtube = NULL, proposals = '[]',"
                     " selected = NULL, draft = NULL, progress = NULL, attempts = 0, error = NULL,"
-                    " remote_path = NULL, history_cover = NULL, overwrite = 0, created_at = ?, updated_at = ?"
+                    " worker_pid = NULL, remote_path = NULL, history_cover = NULL, overwrite = 0,"
+                    " created_at = ?, updated_at = ?"
                     " WHERE id = ?",
                     (url, State.DOWNLOADING, str(folder), now, now, song_id),
                 )
         return CaptureResult(accepted=True, song=self._find(song_id))
+
+    def set_worker(self, song_id: int, pid: int) -> None:
+        with self._write() as db:
+            db.execute("UPDATE songs SET worker_pid = ? WHERE id = ?", (pid, song_id))
 
     def set_progress(self, song_id: int, percent: int) -> None:
         with self._write() as db:
@@ -334,12 +359,19 @@ class Store:
     # Processing
 
     def recover(self) -> None:
-        """After a restart, songs interrupted mid-processing go back to the queue."""
+        """After a restart, songs interrupted mid-processing go back to the queue, and downloads
+        whose worker died are marked failed (so they can be captured again)."""
+        dead = [song.id for song in self.songs((State.DOWNLOADING,)) if not _worker_alive(song)]
         with self._write() as db:
             db.execute(
                 "UPDATE songs SET state = ?, updated_at = ? WHERE state = ?",
                 (State.QUEUED, _now(), State.PROCESSING),
             )
+            for song_id in dead:
+                db.execute(
+                    "UPDATE songs SET state = ?, error = ?, updated_at = ? WHERE id = ? AND state = ?",
+                    (State.DOWNLOAD_FAILED, "download interrupted", _now(), song_id, State.DOWNLOADING),
+                )
 
     def start_processing(self) -> Song | None:
         with self._write() as db:
@@ -395,7 +427,7 @@ class Store:
 
     def confirm(self, song_id: int) -> Song:
         with self._write() as db:
-            self.require(song_id, (State.READY_FOR_REVIEW,))
+            self.require(song_id, REVIEWABLE)
             db.execute(
                 "UPDATE songs SET state = ?, attempts = 0, error = NULL, overwrite = 0, updated_at = ?"
                 " WHERE id = ?",

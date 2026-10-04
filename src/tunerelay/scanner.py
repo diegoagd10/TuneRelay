@@ -6,7 +6,7 @@ import subprocess
 import urllib.parse
 import urllib.request
 
-from tunerelay.config import Config, ConfigError
+from tunerelay.config import Config, ConfigError, require_filled
 from tunerelay.jsondata import JsonObject
 
 API_VERSION = "1.16.1"
@@ -41,10 +41,9 @@ def trigger_scan(cfg: Config) -> None:
         return
     if scan.method != "subsonic":
         raise ConfigError(f'scan.method must be "subsonic" or "none", not "{scan.method}"')
-    required = (("url", scan.url), ("user", scan.user), ("password_entry", scan.password_entry))
-    missing = [name for name, value in required if not value]
-    if missing:
-        raise ConfigError("config.toml is missing " + ", ".join(f"scan.{name}" for name in missing))
+    require_filled(
+        "scan", {"url": bool(scan.url), "user": bool(scan.user), "password_entry": bool(scan.password_entry)}
+    )
     if not scan.url.startswith(("http://", "https://")):
         raise ConfigError("scan.url must start with http:// or https://")
     salt = secrets.token_hex(8)

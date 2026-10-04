@@ -100,6 +100,13 @@ class Config:
         return self.home / "tunerelay.db"
 
 
+def require_filled(section: str, filled: dict[str, bool]) -> None:
+    """Raise a ConfigError naming every `section.key` whose value is empty."""
+    missing = [f"{section}.{key}" for key, ok in filled.items() if not ok]
+    if missing:
+        raise ConfigError("config.toml is missing " + ", ".join(missing))
+
+
 def home_dir() -> Path:
     return Path(os.environ.get("TUNERELAY_HOME") or Path.home() / ".tunerelay")
 

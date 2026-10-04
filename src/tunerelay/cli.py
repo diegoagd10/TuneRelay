@@ -252,7 +252,7 @@ def preview(song_id: Annotated[int, typer.Argument(help="Song id")]) -> None:
 
 def _confirm(_cfg: Config, store: Store, song_id: int) -> Song:
     """Send the song to Navidrome with the draft's metadata."""
-    review.check_complete(store.require(song_id, (State.READY_FOR_REVIEW,)).draft)
+    review.check_complete(store.require(song_id, REVIEWABLE).draft)
     return store.confirm(song_id)
 
 

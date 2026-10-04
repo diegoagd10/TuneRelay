@@ -91,13 +91,18 @@ def capture(cfg: config.Config, url: str) -> Reply:
         notify.send(cfg, "Already in TuneRelay", message)
         return Reply(status="duplicate", message=message, song=_ref(result.song))
     shutil.rmtree(folder, ignore_errors=True)
-    subprocess.Popen(
+    worker = subprocess.Popen(
         [sys.executable, "-m", "tunerelay.host", "--download", str(result.song.id)],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+    store = Store(cfg.database)
+    try:
+        store.set_worker(result.song.id, worker.pid)
+    finally:
+        store.close()
     return Reply(status="accepted", message="download started", song=_ref(result.song))
 
 

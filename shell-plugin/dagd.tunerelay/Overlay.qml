@@ -84,6 +84,7 @@ Item {
     if (!root.song || !root.song.draft) return
     var current = root.song.draft[field]
     if (field === "artists") current = (current || []).join("; ")
+    if (field.indexOf("mbid_") === 0) current = (root.song.draft.mbids || {})[field.slice(5)]
     if (String(current === null || current === undefined ? "" : current) === String(value)) return
     root.songAction(["edit", String(root.song.id), field + "=" + value])
   }
@@ -436,6 +437,12 @@ Item {
               }
               Row {
                 spacing: root.gap
+                Field { label: Strings.fields.mbid_recording; value: (parent.parent.draft.mbids || {}).recording || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_recording", t) } }
+                Field { label: Strings.fields.mbid_release; value: (parent.parent.draft.mbids || {}).release || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_release", t) } }
+                Field { label: Strings.fields.mbid_artist; value: (parent.parent.draft.mbids || {}).artist || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_artist", t) } }
+              }
+              Row {
+                spacing: root.gap
                 Label { width: 96; text: Strings.fields.compilation; opacity: 0.7; anchors.verticalCenter: parent.verticalCenter }
                 Action {
                   label: parent.parent.draft.compilation ? "☑" : "☐"
@@ -502,7 +509,6 @@ Item {
                 onClicked: root.songAction(["replace", String(root.song.id)])
               }
               Action {
-                visible: !!root.song && root.song.state === "ready_for_review"
                 label: Strings.confirm
                 primary: true
                 onClicked: root.songAction(["confirm", String(root.song.id)])

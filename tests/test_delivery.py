@@ -290,3 +290,65 @@ def test_a_server_side_error_is_reported(tr: TuneRelay) -> None:
     song = tr.song(song_id)
     assert song["state"] == "failed"
     assert song["error"].startswith("mkdir failed on the server")
+
+
+def test_a_byte_identical_file_already_on_the_server_counts_as_delivered(tr: TuneRelay) -> None:
+    # Same metadata and audio as an earlier delivery, e.g. a crash after the copy but before it was recorded.
+    first = confirmed(tr)
+    tr.daemon_once()
+    second = tr.ready_for_review("bbbbbbbbbbb")
+    tr.cli("confirm", str(second))
+
+    tr.daemon_once()
+
+    assert tr.song(first)["state"] == "sent"
+    assert tr.song(second)["state"] == "sent"
+
+
+def test_after_editing_a_conflicting_song_it_can_be_confirmed_to_the_new_path(tr: TuneRelay) -> None:
+    existing = tr.library / DEAD_END
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"old")
+    song_id = confirmed(tr)
+    tr.daemon_once()
+
+    tr.cli("edit", str(song_id), "title=Tombstone Boogie (Live)")
+    assert tr.cli("confirm", str(song_id))["state"] == "in_transit"
+    tr.daemon_once()
+
+    assert tr.song(song_id)["state"] == "sent"
+    assert existing.read_bytes() == b"old"
+    assert (tr.library / "Cigar/Dead End (2019)/03 - Tombstone Boogie (Live).m4a").exists()
+
+
+def test_replace_only_overwrites_the_file_that_conflicted(tr: TuneRelay) -> None:
+    existing = tr.library / DEAD_END
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"old")
+    other = tr.library / "Cigar/Dead End (2019)/04 - Other Song.m4a"
+    other.write_bytes(b"other")
+    song_id = confirmed(tr)
+    tr.daemon_once()
+
+    tr.cli("edit", str(song_id), "title=Other Song", "track=4")
+    tr.cli("replace", str(song_id))
+    tr.daemon_once()
+
+    assert tr.song(song_id)["state"] == "conflict"
+    assert other.read_bytes() == b"other"
+    assert existing.read_bytes() == b"old"
+
+
+def test_a_corrupt_audio_file_fails_delivery_without_crashing_the_daemon(tr: TuneRelay) -> None:
+    folder = tr.inbox / "broken"
+    folder.mkdir(parents=True)
+    (folder / "Broken - Song.m4a").write_bytes(b"this is not an mp4 file")
+    (folder / "ready").touch()
+    tr.daemon_once()
+    [song] = tr.cli("list")["songs"]
+    tr.cli("confirm", str(song["id"]))
+
+    tr.daemon_once()
+
+    assert tr.song(song["id"])["state"] == "failed"
+    assert tr.song(song["id"])["error"].startswith("cannot tag the audio")

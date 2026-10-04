@@ -162,7 +162,10 @@ def test_confirm_sends_the_song_on_its_way(tr: TuneRelay) -> None:
     song_id = tr.ready_for_review()
 
     assert tr.cli("confirm", str(song_id))["state"] == "in_transit"
-    assert tr.cli_error("confirm", str(song_id)) == f"song {song_id} is in_transit; expected ready_for_review"
+    assert (
+        tr.cli_error("confirm", str(song_id))
+        == f"song {song_id} is in_transit; expected ready_for_review, conflict"
+    )
 
 
 def test_review_actions_need_a_song_in_review(tr: TuneRelay) -> None:

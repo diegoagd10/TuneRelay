@@ -1,6 +1,9 @@
 """Review actions on a song's draft: edits, cover changes, preview and discard."""
 
+import contextlib
+import os
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import replace
@@ -114,8 +117,9 @@ def preview(cfg: Config, song: Song) -> Path:
     if audio is None:
         raise ReviewError(f"song {song.id} has no local audio")
     pid_file = cfg.home / "preview.pid"
-    if pid_file.exists():
-        subprocess.run(["pkill", "-F", str(pid_file)], capture_output=True, check=False)
+    if pid_file.exists() and pid_file.read_text().strip().isdigit():
+        with contextlib.suppress(OSError):
+            os.kill(int(pid_file.read_text()), signal.SIGTERM)
     process = subprocess.Popen(
         [cfg.tools.player, "--no-video", "--", str(audio)],
         stdin=subprocess.DEVNULL,

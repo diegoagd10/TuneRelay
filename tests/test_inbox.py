@@ -1,3 +1,4 @@
+import os
 import shutil
 import signal
 import subprocess
@@ -57,3 +58,16 @@ def test_a_song_interrupted_mid_processing_is_requeued_on_restart(tr: TuneRelay)
     tr.daemon_once()
 
     assert tr.song(song_id)["state"] == "ready_for_review"
+
+
+def test_a_download_whose_worker_died_is_failed_on_restart_and_can_be_captured_again(tr: TuneRelay) -> None:
+    tr.env["FAKE_YTDLP_DELAY"] = "30"
+    reply = tr.host({"url": "https://youtu.be/dQw4w9WgXcQ"})
+    wait_until(lambda: tr.song(reply["song"]["id"])["worker_pid"] is not None)
+    os.killpg(tr.song(reply["song"]["id"])["worker_pid"], signal.SIGKILL)
+
+    tr.daemon_once()
+
+    assert tr.song(reply["song"]["id"])["state"] == "download_failed"
+    del tr.env["FAKE_YTDLP_DELAY"]
+    assert tr.capture() == reply["song"]["id"]

@@ -15,7 +15,7 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Protocol
 
-from tunerelay.config import Config, ConfigError
+from tunerelay.config import Config, ConfigError, require_filled
 from tunerelay.store import Proposal
 
 UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -85,11 +85,22 @@ def _send_verified(transport: Transport, local: Path, dest: PurePosixPath) -> No
     transport.move(temporary, dest)
 
 
-def deliver(audio: Path, proposal: Proposal, transport: Transport, *, overwrite: bool) -> DeliveryResult:
+def _same_file(transport: Transport, local: Path, remote: PurePosixPath) -> bool:
+    return (transport.size(remote), transport.checksum(remote)) == (local.stat().st_size, sha256(local))
+
+
+def deliver(
+    audio: Path, proposal: Proposal, transport: Transport, *, replace: PurePosixPath | None
+) -> DeliveryResult:
+    """Send the audio and its folder cover. An existing file is only overwritten when it is `replace`
+    (the path the user chose to replace); a byte-identical one means an earlier attempt already got there."""
     dest = destination_path(proposal)
-    if not overwrite and transport.exists(dest):
-        return DeliveryResult(DeliveryOutcome.CONFLICT, dest)
-    _send_verified(transport, audio, dest)
+    overwrite = dest == replace
+    if transport.exists(dest) and not overwrite:
+        if not _same_file(transport, audio, dest):
+            return DeliveryResult(DeliveryOutcome.CONFLICT, dest)
+    else:
+        _send_verified(transport, audio, dest)
     cover_dest = dest.parent / COVER_NAME
     if proposal.cover and Path(proposal.cover).exists() and (overwrite or not transport.exists(cover_dest)):
         _send_verified(transport, Path(proposal.cover), cover_dest)
@@ -232,9 +243,5 @@ def transport_for(cfg: Config) -> Transport:
         return LocalTransport(Path(settings.local_root), settings.local_fail_times)
     if settings.transport != "ssh":
         raise ConfigError(f'delivery.transport must be "ssh" or "local", not "{settings.transport}"')
-    missing = [
-        name for name, value in (("hosts", settings.hosts), ("music_dir", settings.music_dir)) if not value
-    ]
-    if missing:
-        raise ConfigError("config.toml is missing " + ", ".join(f"delivery.{name}" for name in missing))
+    require_filled("delivery", {"hosts": bool(settings.hosts), "music_dir": bool(settings.music_dir)})
     return SshTransport(cfg.tools.ssh, cfg.tools.rsync, settings.hosts, settings.user, settings.music_dir)
