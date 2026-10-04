@@ -135,3 +135,13 @@ def test_a_missing_downloader_is_a_notified_download_failure(tr: TuneRelay) -> N
     song = tr.wait_for_state(reply["song"]["id"], "download_failed")
     assert song["error"].startswith("cannot run yt-dlp")
     assert tr.notifications()[-1].startswith("Download failed | https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+
+
+def test_an_inbox_that_cannot_be_created_is_a_notified_download_failure(tr: TuneRelay) -> None:
+    tr.inbox.write_text("not a folder")
+
+    reply = tr.host({"url": "https://youtu.be/dQw4w9WgXcQ"})
+
+    song = tr.wait_for_state(reply["song"]["id"], "download_failed")
+    assert song["error"].startswith("cannot create the download folder")
+    assert tr.notifications()[-1].startswith("Download failed | https://www.youtube.com/watch?v=dQw4w9WgXcQ")

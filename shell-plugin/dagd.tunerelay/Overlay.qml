@@ -45,21 +45,36 @@ Item {
 
   function close() { root.opened = false }
 
-  // Taking focus away from a TextInput fires its editingFinished, so a pending edit
-  // is queued (and the run queue is FIFO) before whatever action was clicked.
-  function commitEditors() { keys.forceActiveFocus() }
+  // Start of every user action: clear the last error, then take focus away from any
+  // TextInput so its editingFinished queues the pending edit before the action.
+  function commitEditors() {
+    root.message = ""
+    keys.forceActiveFocus()
+  }
+
+  EditGate {
+    id: editGate
+    run: root.run
+    onEdited: function(song) { root.song = song }
+    onBlocked: if (!root.message) root.message = Strings.fixFieldsFirst
+  }
 
   function dismiss() {
     root.opened = false
     if (root.shell) root.shell.hide(root.pluginId)
   }
 
-  function run(args, callback) {
+  // Run a CLI command. Errors are shown until the user's next action (see
+  // commitEditors), so an unrelated background refresh cannot hide them.
+  function run(args, onSuccess, onFailure) {
     if (!root.service) return
     root.service.run(args, function(result) {
-      if (result && result.error) root.message = Strings.errorPrefix + result.error
-      else if (result) root.message = ""
-      if (callback && result && !result.error) callback(result)
+      if (!result || result.error) {
+        root.message = Strings.errorPrefix + (result ? result.error : Strings.noAnswer)
+        if (onFailure) onFailure(result)
+        return
+      }
+      if (onSuccess) onSuccess(result)
     })
   }
 
@@ -67,7 +82,10 @@ Item {
     var waiting = root.status.review_songs || []
     var stillWaiting = false
     for (var i = 0; i < waiting.length; i++) if (waiting[i].id === root.songId) stillWaiting = true
-    if (!stillWaiting) root.songId = waiting.length > 0 ? waiting[0].id : -1
+    if (!stillWaiting) {
+      root.songId = waiting.length > 0 ? waiting[0].id : -1
+      editGate.reset()
+    }
     if (root.songId >= 0) root.run(["show", String(root.songId)], function(result) { root.song = result })
     else root.song = null
     if (root.tab === "history") root.loadHistory()
@@ -84,13 +102,20 @@ Item {
     root.run(args, function(result) { if (result.id !== undefined) root.song = result })
   }
 
+  // Confirm / Replace: only once the reviewed edits are applied, and none was rejected.
+  function reviewedAction(command) {
+    root.commitEditors()
+    var id = String(root.song.id)
+    editGate.afterEdits(function() { root.songAction([command, id]) })
+  }
+
   function edit(field, value) {
     if (!root.song || !root.song.draft) return
     var current = root.song.draft[field]
     if (field === "artists") current = (current || []).join("; ")
     if (field.indexOf("mbid_") === 0) current = (root.song.draft.mbids || {})[field.slice(5)]
-    if (String(current === null || current === undefined ? "" : current) === String(value)) return
-    root.songAction(["edit", String(root.song.id), field + "=" + value])
+    if (String(current === null || current === undefined ? "" : current) === String(value) && !editGate.isInvalid(field)) return
+    editGate.edit(root.song.id, field, value)
   }
 
   function proposalLabel(proposal) {
@@ -159,12 +184,15 @@ Item {
 
   component Field: Row {
     id: field
+    property string name: ""
     property string label: ""
     property string value: ""
     property string placeholder: ""
     property int inputWidth: 200
     signal committed(string text)
     spacing: root.gap / 2
+    // Typing breaks the text binding; follow the draft again when it changes (e.g. another proposal).
+    onValueChanged: input.text = field.value
     Label {
       width: 96
       anchors.verticalCenter: parent.verticalCenter
@@ -177,7 +205,8 @@ Item {
       radius: root.radius
       color: "transparent"
       border.width: 1
-      border.color: input.activeFocus ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3)
+      border.color: field.name && editGate.isInvalid(field.name) ? root.urgent
+        : (input.activeFocus ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3))
       TextInput {
         id: input
         anchors.fill: parent
@@ -408,7 +437,10 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                       root.commitEditors()
-                      root.songAction(["select", String(root.song.id), String(proposalCard.index)])
+                      root.run(["select", String(root.song.id), String(proposalCard.index)], function(result) {
+                        editGate.reset()
+                        root.song = result
+                      })
                     }
                   }
                 }
@@ -424,15 +456,16 @@ Item {
 
               Row {
                 spacing: root.gap * 2
-                Field { label: Strings.fields.title; value: editForm.draft.title || ""; inputWidth: 280; onCommitted: function(t) { root.edit("title", t) } }
-                Field { label: Strings.fields.artist; value: editForm.draft.artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("artist", t) } }
+                Field { name: "title"; label: Strings.fields.title; value: editForm.draft.title || ""; inputWidth: 280; onCommitted: function(t) { root.edit("title", t) } }
+                Field { name: "artist"; label: Strings.fields.artist; value: editForm.draft.artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("artist", t) } }
               }
               Row {
                 spacing: root.gap * 2
-                Field { label: Strings.fields.album; value: editForm.draft.album || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album", t) } }
-                Field { label: Strings.fields.album_artist; value: editForm.draft.album_artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album_artist", t) } }
+                Field { name: "album"; label: Strings.fields.album; value: editForm.draft.album || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album", t) } }
+                Field { name: "album_artist"; label: Strings.fields.album_artist; value: editForm.draft.album_artist || ""; inputWidth: 280; onCommitted: function(t) { root.edit("album_artist", t) } }
               }
               Field {
+                name: "artists"
                 label: Strings.fields.artists
                 value: (editForm.draft.artists || []).join("; ")
                 placeholder: Strings.artistsHint
@@ -441,18 +474,18 @@ Item {
               }
               Row {
                 spacing: root.gap
-                Field { label: Strings.fields.track; value: String(editForm.draft.track || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track", t) } }
-                Field { label: Strings.of; value: String(editForm.draft.track_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track_total", t) } }
-                Field { label: Strings.fields.disc; value: String(editForm.draft.disc || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc", t) } }
-                Field { label: Strings.of; value: String(editForm.draft.disc_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc_total", t) } }
-                Field { label: Strings.fields.year; value: editForm.draft.year === null || editForm.draft.year === undefined ? "" : String(editForm.draft.year); inputWidth: 60; onCommitted: function(t) { root.edit("year", t) } }
-                Field { label: Strings.fields.genre; value: editForm.draft.genre || ""; inputWidth: 140; onCommitted: function(t) { root.edit("genre", t) } }
+                Field { name: "track"; label: Strings.fields.track; value: String(editForm.draft.track || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track", t) } }
+                Field { name: "track_total"; label: Strings.of; value: String(editForm.draft.track_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("track_total", t) } }
+                Field { name: "disc"; label: Strings.fields.disc; value: String(editForm.draft.disc || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc", t) } }
+                Field { name: "disc_total"; label: Strings.of; value: String(editForm.draft.disc_total || ""); inputWidth: 40; onCommitted: function(t) { root.edit("disc_total", t) } }
+                Field { name: "year"; label: Strings.fields.year; value: editForm.draft.year === null || editForm.draft.year === undefined ? "" : String(editForm.draft.year); inputWidth: 60; onCommitted: function(t) { root.edit("year", t) } }
+                Field { name: "genre"; label: Strings.fields.genre; value: editForm.draft.genre || ""; inputWidth: 140; onCommitted: function(t) { root.edit("genre", t) } }
               }
               Row {
                 spacing: root.gap
-                Field { label: Strings.fields.mbid_recording; value: (editForm.draft.mbids || {}).recording || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_recording", t) } }
-                Field { label: Strings.fields.mbid_release; value: (editForm.draft.mbids || {}).release || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_release", t) } }
-                Field { label: Strings.fields.mbid_artist; value: (editForm.draft.mbids || {}).artist || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_artist", t) } }
+                Field { name: "mbid_recording"; label: Strings.fields.mbid_recording; value: (editForm.draft.mbids || {}).recording || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_recording", t) } }
+                Field { name: "mbid_release"; label: Strings.fields.mbid_release; value: (editForm.draft.mbids || {}).release || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_release", t) } }
+                Field { name: "mbid_artist"; label: Strings.fields.mbid_artist; value: (editForm.draft.mbids || {}).artist || ""; inputWidth: 200; onCommitted: function(t) { root.edit("mbid_artist", t) } }
               }
               Row {
                 spacing: root.gap
@@ -519,12 +552,12 @@ Item {
                 visible: !!root.song && root.song.state === "conflict"
                 label: Strings.replace
                 primary: true
-                onClicked: root.songAction(["replace", String(root.song.id)])
+                onClicked: root.reviewedAction("replace")
               }
               Action {
                 label: Strings.confirm
                 primary: true
-                onClicked: root.songAction(["confirm", String(root.song.id)])
+                onClicked: root.reviewedAction("confirm")
               }
             }
           }

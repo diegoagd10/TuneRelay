@@ -45,7 +45,10 @@ def canonical_url(video_id: str) -> str:
 
 def download(cfg: Config, video_id: str, folder: Path, on_progress: Callable[[int], None]) -> str | None:
     """Download best M4A audio (no re-encoding), info JSON and thumbnail. Returns an error message or None."""
-    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        return f"cannot create the download folder {folder}: {error.strerror or error}"
     command = [
         cfg.tools.ytdlp,
         "--no-playlist",

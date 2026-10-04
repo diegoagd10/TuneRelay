@@ -123,6 +123,11 @@ def session() -> Generator[tuple[Config, Store]]:
     except (StoreError, ConfigError, CommandError, review.ReviewError, DaemonBusyError) as error:
         emit(to_json(ErrorOutput(error=str(error))))
         raise typer.Exit(1) from error
+    except OSError as error:
+        # Expected I/O failures are converted where they happen; this keeps any other one in the
+        # JSON contract instead of a traceback the plugin cannot show.
+        emit(to_json(ErrorOutput(error=f"{error.strerror or error}: {error.filename or ''}".rstrip(": "))))
+        raise typer.Exit(1) from error
     finally:
         if store is not None:
             store.close()

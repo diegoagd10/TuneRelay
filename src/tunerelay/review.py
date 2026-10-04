@@ -120,13 +120,18 @@ def preview(cfg: Config, song: Song) -> Path:
         raise ReviewError(f"song {song.id} has no local audio")
     pid_file = cfg.home / "preview.json"
     _stop_previous_preview(pid_file)
-    process = subprocess.Popen(
-        [cfg.tools.player, "--no-video", "--", str(audio)],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    try:
+        process = subprocess.Popen(
+            [cfg.tools.player, "--no-video", "--", str(audio)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise ReviewError(
+            f"cannot start the preview player ({cfg.tools.player}): {error.strerror or error}"
+        ) from error
     started = _start_time(process.pid)
     if started is not None:
         pid_file.write_text(json.dumps({"pid": process.pid, "start": started}))

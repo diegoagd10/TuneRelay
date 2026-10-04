@@ -82,3 +82,5 @@ var percent = function(n) { return n + "%" }
 var codexLookup = "(Codex lookup)"
 var trackOf = function(n, total) { return "track " + n + "/" + total }
 var errorPrefix = "Error: "
+var noAnswer = "no answer from tunerelay"
+var fixFieldsFirst = "Fix the highlighted fields before confirming."

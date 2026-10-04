@@ -114,13 +114,17 @@ def home_dir() -> Path:
 def load() -> Config:
     """Read `config.toml` from the TuneRelay home, creating a commented default on first use."""
     home = home_dir()
-    home.mkdir(parents=True, exist_ok=True)
     path = home / "config.toml"
-    if not path.exists():
-        path.write_text(DEFAULT_CONFIG)
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text(DEFAULT_CONFIG)
+        text_content = path.read_text()
+    except OSError as error:
+        raise ConfigError(f"cannot read config.toml ({path}): {error.strerror or error}") from error
     defaults = JsonObject(tomllib.loads(DEFAULT_CONFIG))
     try:
-        data = JsonObject(tomllib.loads(path.read_text()))
+        data = JsonObject(tomllib.loads(text_content))
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"config.toml is not valid TOML: {error}") from error
 

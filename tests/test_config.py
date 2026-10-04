@@ -85,3 +85,16 @@ def test_an_unusable_database_is_reported_as_a_json_error(tr: TuneRelay) -> None
     (tr.home / "tunerelay.db").write_text("this is not a database" * 100)
 
     assert tr.cli_error("status").startswith("cannot open the TuneRelay database")
+
+
+def test_an_unreadable_config_is_reported_as_a_json_error(tr: TuneRelay) -> None:
+    (tr.home / "config.toml").chmod(0)
+
+    assert tr.cli_error("status").startswith("cannot read config.toml")
+
+
+def test_a_directory_at_the_config_path_is_reported_as_a_json_error(tr: TuneRelay) -> None:
+    (tr.home / "config.toml").unlink()
+    (tr.home / "config.toml").mkdir()
+
+    assert tr.cli_error("status").startswith("cannot read config.toml")

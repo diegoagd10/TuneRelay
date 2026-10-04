@@ -18,7 +18,7 @@ from typing import BinaryIO
 
 from tunerelay import config, inbox, notify, youtube
 from tunerelay.jsondata import JsonObject
-from tunerelay.store import CaptureResult, Song, State, Store, StoreError
+from tunerelay.store import CaptureResult, Song, State, Store, StoreError, YouTubeInfo
 
 MAX_FRAME = 1024 * 1024
 DUPLICATE_STATES = {
@@ -126,13 +126,20 @@ def run_download(cfg: config.Config, song_id: int) -> None:
             store.set_progress(song_id, percent)
 
         error = youtube.download(cfg, song.video_id, folder, on_progress)
-        if error is not None:
-            shutil.rmtree(folder, ignore_errors=True)
+        info: YouTubeInfo | None = None
+        if error is None:
+            try:
+                info = inbox.read_info(folder, song.video_id)
+                inbox.mark_ready(folder)
+            except OSError as failure:
+                error = f"cannot finish the download in {folder}: {failure.strerror or failure}"
+        if error is not None or info is None:
+            error = error or "the download did not finish"
+            if folder.is_dir():
+                shutil.rmtree(folder, ignore_errors=True)
             store.mark_download_failed(song_id, error)
             notify.send(cfg, "Download failed", f"{song.url}\n{error}", critical=True)
             return
-        info = inbox.read_info(folder, song.video_id)
-        inbox.mark_ready(folder)
         store.mark_downloaded(song_id, info)
         notify.send(cfg, "Queued", info.title or song.url)
     except StoreError:

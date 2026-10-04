@@ -224,3 +224,10 @@ def test_preview_never_signals_a_process_it_did_not_start(tr: TuneRelay) -> None
     assert unrelated.poll() is None
     unrelated.kill()
     unrelated.wait()
+
+
+def test_a_missing_preview_player_is_a_json_error(tr: TuneRelay) -> None:
+    tr.configure("tools", player=str(tr.root / "no-such-player"))
+    song_id = tr.ready_for_review()
+
+    assert tr.cli_error("preview", str(song_id)).startswith("cannot start the preview player")
