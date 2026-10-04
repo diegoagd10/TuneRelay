@@ -1,0 +1,81 @@
+[project]
+name = "tunerelay"
+version = "0.1.0"
+description = "Capture YouTube songs into Navidrome with AI-assisted metadata review"
+authors = [
+    { name = "Diego Gomez", email = "github.com.revivable605@passmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "mutagen>=1.48.1",
+    "pillow>=12.3.0",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+tunerelay = "tunerelay.cli:main"
+tunerelay-host = "tunerelay.host:main"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "tunerelay-dev",
+    "coverage>=7.16.2",
+    "deptry>=0.25.1",
+    "pip-audit>=2.10.1",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.16.10",
+]
+
+[tool.uv.workspace]
+members = ["tools"]
+
+[tool.uv.sources]
+tunerelay-dev = { workspace = true }
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["typer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["tunerelay"]
+patch = ["subprocess"]
+parallel = true
+sigterm = true
+disable_warnings = ["no-data-collected"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if __name__ == .__main__.:"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RET", "PTH", "PL", "RUF", "ANN", "S", "TRY", "PERF"]
+ignore = ["PLR2004", "PLR0913", "TRY003", "S603", "S607", "S404"]
+
+[tool.ruff.lint.isort]
+known-local-folder = ["conftest", "test_processing", "test_delivery"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR0915", "RUF059"]
+"tools/**" = ["T201"]
+
+[tool.pyright]
+include = ["src", "tests", "tools"]
+strict = ["src"]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"

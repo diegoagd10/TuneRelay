@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "TuneRelay",
+  "version": "0.1.0",
+  "description": "Capture the current YouTube song into TuneRelay (Alt+Shift+M)",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw3CeyZES5x0k5FWdhQ7MiZ5EmyfbfrMFOSj6f6FzITqjeQHg6ftemINc7ivcekmhqHstupWuwuI0GJHx5e5CbOfUZo7yoAz8AfhzsFAQp4LwLfzphV7MOeX6WymBu/Q6qsSEwpfxRMTzAtAhltyVT02CkCbhO9AwkBFnz4dmyu64fTqtFr4V7avlzw62RvFUWTqi3Qvc85Rn2UquNm9AWPjjRZFKTT5JaGxrbEGwFEji6dy8zoNa2K7Z8Wdj4vFN6Sgvzes48Gadjo4B9Dz9iBMMez1+xh65ayBQGr31Luaresn1rL+xx2XstdR9PUaBzXjlWQY+a5/N7ujsv+m6SQIDAQAB",
+  "permissions": ["activeTab", "scripting", "nativeMessaging"],
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "action": {
+    "default_title": "Capture song with TuneRelay"
+  },
+  "commands": {
+    "capture": {
+      "suggested_key": {"default": "Alt+Shift+M"},
+      "description": "Capture the current song with TuneRelay"
+    }
+  },
+  "background": {"service_worker": "background.js"}
+}
