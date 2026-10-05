@@ -15,7 +15,8 @@ Item {
   property bool opened: false
 
   readonly property string pluginId: (manifest && manifest.id) || "dagd.tunerelay"
-  readonly property var service: shell ? shell.serviceFor(pluginId) : null
+  // The shell injects the matching service before registering and opening the overlay.
+  property var service: null
   readonly property var status: service ? service.status : ({ review_songs: [], queue: [] })
 
   property string tab: "review"
