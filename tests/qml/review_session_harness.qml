@@ -123,13 +123,17 @@ Item {
     root.deliver()
     root.record("---")
 
-    // 7. A failed proposal selection unlocks the form again.
+    // 7. A failed proposal selection shows the persisted draft before anything can be
+    //    confirmed, including an edit that was queued (and saved) just before the click.
     root.open(12)
+    session.edit("track", "4")                        // committed by the proposal click
     session.selectProposal(2)
+    root.deliver()                                    // edit 12 track=4 is saved
     root.failNext = true
-    root.deliver()
-    session.edit("track", "6")
-    root.deliver()
+    root.deliver()                                    // select 12 2 fails
+    session.reviewed("confirm")
+    root.record("after failure: ready=" + session.ready + " queued=" + root.pending.length)
+    root.deliver()                                    // the persisted draft is reloaded
     session.reviewed("confirm")
     root.deliver()
 

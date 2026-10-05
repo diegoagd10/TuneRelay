@@ -10,7 +10,8 @@ import QtQuick
 //
 // Selecting a proposal replaces the whole draft, so while that request is
 // pending the form is locked (`ready` is false): edits and actions are refused
-// rather than applied on top of a draft the form does not show yet.
+// rather than applied on top of a draft the form does not show yet. If it fails,
+// the persisted draft is reloaded before the form can be used again.
 QtObject {
   id: session
 
@@ -71,8 +72,12 @@ QtObject {
       },
       function() {
         if (session.songId !== id) return
+        // Edits queued before the click may have been saved while their answers were
+        // ignored, so the model can be stale: drop it and reload the persisted draft.
+        // Until that arrives the song is not loaded, so nothing can be confirmed.
         session.selecting = false
-        session.gate.draftReplaced(id)  // show the unchanged draft again
+        session.song = null
+        session.load()
       })
   }
 

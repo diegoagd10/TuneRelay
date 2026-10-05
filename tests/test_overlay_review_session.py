@@ -59,10 +59,13 @@ def test_an_edit_while_a_proposal_selection_is_pending_never_hides_what_gets_con
     ]
 
 
-def test_a_failed_proposal_selection_unlocks_the_form(scenarios: list[list[str]]) -> None:
+def test_a_failed_proposal_selection_reloads_the_saved_draft_before_confirm(
+    scenarios: list[list[str]],
+) -> None:
     assert scenarios[6] == [
+        "cli edit 12 track=4",
         "cli select 12 2",
-        "cli edit 12 track=6",
+        "after failure: ready=false queued=1",
         "cli confirm 12",
-        "confirmed saved=6 shown=6",
+        "confirmed saved=4 shown=4",
     ]
