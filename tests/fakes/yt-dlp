@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Fake yt-dlp: writes a tiny M4A, an info JSON and a thumbnail.
+
+Behaviour is chosen by environment variables:
+  FAKE_YTDLP_MODE   ok (default) | fail | noaudio
+  FAKE_YTDLP_INFO   path to a JSON file merged over the default info
+  FAKE_YTDLP_DELAY  seconds to wait (with a partial file on disk) before finishing
+"""
+
+import json
+import os
+import shutil
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+args = sys.argv[1:]
+log = os.environ.get("FAKE_LOG")
+if log:
+    with open(log, "a") as fh:
+        fh.write(json.dumps({"tool": "yt-dlp", "args": args}) + "\n")
+
+if os.environ.get("FAKE_YTDLP_MODE") == "fail":
+    print("ERROR: [youtube] Video unavailable", file=sys.stderr)
+    sys.exit(1)
+
+template = args[args.index("-o") + 1]
+url = args[-1]
+video_id = url.rsplit("=", 1)[-1]
+base = Path(template.replace(".%(ext)s", ""))
+base.parent.mkdir(parents=True, exist_ok=True)
+
+info = {
+    "id": video_id,
+    "title": "Cigar - Tombstone Boogie",
+    "channel": "Cigar - Topic",
+    "uploader": "Cigar - Topic",
+    "upload_date": "20240512",
+    "duration": 221,
+    "description": "Provided to YouTube by Cigar.",
+    "webpage_url": url,
+}
+override = os.environ.get("FAKE_YTDLP_INFO")
+if override:
+    info.update(json.loads(Path(override).read_text()))
+
+partial = base.with_name(base.name + ".m4a.part")
+partial.write_bytes(b"partial")
+for pct in ("  0.0%", " 42.0%", "100.0%"):
+    print(f"TUNERELAY_PROGRESS {pct}", flush=True)
+delay = float(os.environ.get("FAKE_YTDLP_DELAY", "0"))
+if delay:
+    time.sleep(delay)
+partial.unlink()
+if os.environ.get("FAKE_YTDLP_MODE") != "noaudio":
+    shutil.copy(HERE / "tiny.m4a", base.with_suffix(".m4a"))
+base.with_suffix(".info.json").write_text(json.dumps(info))
+shutil.copy(HERE / "thumb.jpg", base.with_suffix(".jpg"))

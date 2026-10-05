@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "dagd.tunerelay",
+  "name": "TuneRelay",
+  "version": "0.1.0",
+  "author": "Diego Gomez",
+  "description": "Review YouTube captures and send them to Navidrome",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "Overlay.qml"
+  },
+  "barWidget": {
+    "displayName": "TuneRelay",
+    "description": "Songs waiting for review, and whether TuneRelay is busy",
+    "category": "Media",
+    "allowMultiple": false
+  }
+}

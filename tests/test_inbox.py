@@ -1,0 +1,99 @@
+import os
+import shutil
+import signal
+import subprocess
+
+from conftest import BIN, FAKES, TuneRelay, wait_until
+
+
+def drop_folder(tr: TuneRelay, name: str, *, ready: bool) -> None:
+    folder = tr.inbox / name
+    folder.mkdir(parents=True)
+    shutil.copy(FAKES / "tiny.m4a", folder / "Liv Lingive - Rain.m4a")
+    if ready:
+        (folder / "ready").touch()
+
+
+def test_a_folder_without_the_ready_marker_is_never_processed(tr: TuneRelay) -> None:
+    drop_folder(tr, "rain", ready=False)
+
+    tr.daemon_once()
+
+    assert tr.cli("list")["songs"] == []
+
+
+def test_a_manually_dropped_ready_folder_is_processed(tr: TuneRelay) -> None:
+    drop_folder(tr, "rain", ready=True)
+
+    tr.daemon_once()
+
+    [song] = tr.cli("list", "--state", "ready_for_review")["songs"]
+    assert song["video_id"] == "rain"
+    default = tr.song(song["id"])["proposals"][-1]
+    assert (default["artist"], default["title"]) == ("Liv Lingive", "Rain")
+    assert default["cover"] is None
+
+
+def test_an_in_progress_download_is_not_picked_up(tr: TuneRelay) -> None:
+    tr.env["FAKE_YTDLP_DELAY"] = "3"
+    reply = tr.host({"url": "https://youtu.be/dQw4w9WgXcQ"})
+    wait_until((tr.inbox / "dQw4w9WgXcQ" / "audio.m4a.part").exists)
+
+    tr.daemon_once()
+
+    assert tr.song(reply["song"]["id"])["state"] == "downloading"
+    tr.wait_for_state(reply["song"]["id"], "queued")
+
+
+def test_a_song_interrupted_mid_processing_is_requeued_on_restart(tr: TuneRelay) -> None:
+    song_id = tr.capture()
+    tr.env["FAKE_CODEX_MODE"] = "hang"
+    tr.configure("codex", timeout=60)
+    daemon = subprocess.Popen([str(BIN / "tunerelay"), "daemon"], env=tr.env)
+    tr.wait_for_state(song_id, "processing")
+    daemon.send_signal(signal.SIGKILL)
+    daemon.wait()
+
+    del tr.env["FAKE_CODEX_MODE"]
+    tr.daemon_once()
+
+    assert tr.song(song_id)["state"] == "ready_for_review"
+
+
+def test_a_download_whose_worker_died_is_failed_on_restart_and_can_be_captured_again(tr: TuneRelay) -> None:
+    tr.env["FAKE_YTDLP_DELAY"] = "30"
+    reply = tr.host({"url": "https://youtu.be/dQw4w9WgXcQ"})
+    wait_until(lambda: tr.song(reply["song"]["id"])["worker_pid"] is not None)
+    os.killpg(tr.song(reply["song"]["id"])["worker_pid"], signal.SIGKILL)
+
+    tr.daemon_once()
+
+    assert tr.song(reply["song"]["id"])["state"] == "download_failed"
+    del tr.env["FAKE_YTDLP_DELAY"]
+    assert tr.capture() == reply["song"]["id"]
+
+
+def test_only_one_daemon_works_at_a_time(tr: TuneRelay) -> None:
+    song_id = tr.capture()
+    tr.env["FAKE_CODEX_MODE"] = "hang"
+    tr.configure("codex", timeout=60)
+    first = subprocess.Popen([str(BIN / "tunerelay"), "daemon"], env=tr.env)
+    try:
+        tr.wait_for_state(song_id, "processing")
+
+        assert tr.cli_error("daemon", "--once") == "another TuneRelay daemon is running"
+        assert tr.song(song_id)["state"] == "processing"
+        assert len(tr.calls("codex")) == 1
+    finally:
+        first.kill()
+        first.wait()
+
+
+def test_an_idle_daemon_does_not_report_changes(tr: TuneRelay) -> None:
+    tr.daemon_once()
+    before = tr.cli("status")["version"]
+
+    tr.daemon_once()
+    tr.daemon_once()
+
+    assert tr.cli("status")["version"] == before

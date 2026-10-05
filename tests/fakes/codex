@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Fake codex: writes canned output to the -o file.
+
+  FAKE_CODEX_MODE    output (default) | hang | fail
+  FAKE_CODEX_OUTPUT  path to the text to write as the last message
+"""
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+args = sys.argv[1:]
+prompt = sys.stdin.read()
+log = os.environ.get("FAKE_LOG")
+if log:
+    with open(log, "a") as fh:
+        fh.write(json.dumps({"tool": "codex", "args": args, "prompt": prompt}) + "\n")
+
+mode = os.environ.get("FAKE_CODEX_MODE", "output")
+if mode == "hang":
+    time.sleep(600)
+if mode == "fail":
+    sys.exit(1)
+schema = json.loads(Path(args[args.index("--output-schema") + 1]).read_text())
+assert schema["type"] == "object"
+out = Path(args[args.index("-o") + 1])
+source = os.environ.get("FAKE_CODEX_OUTPUT")
+out.write_text(Path(source).read_text() if source else '{"proposals": []}')
