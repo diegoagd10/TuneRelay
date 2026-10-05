@@ -19,8 +19,8 @@ Item {
   readonly property var status: service ? service.status : ({ review_songs: [], queue: [] })
 
   property string tab: "review"
-  property int songId: -1
-  property var song: null
+  readonly property int songId: session.songId
+  readonly property var song: session.song
   property string message: ""
   property string historyQuery: ""
   property string historyState: ""
@@ -52,10 +52,9 @@ Item {
     keys.forceActiveFocus()
   }
 
-  EditGate {
-    id: editGate
+  ReviewSession {
+    id: session
     run: root.run
-    onEdited: function(song) { root.song = song }
     onBlocked: if (!root.message) root.message = Strings.fixFieldsFirst
   }
 
@@ -82,25 +81,9 @@ Item {
     var waiting = root.status.review_songs || []
     var stillWaiting = false
     for (var i = 0; i < waiting.length; i++) if (waiting[i].id === root.songId) stillWaiting = true
-    if (!stillWaiting) root.selectSong(waiting.length > 0 ? waiting[0].id : -1)
-    if (root.songId >= 0) root.run(["show", String(root.songId)], root.showSong)
-    else root.song = null
+    if (!stillWaiting) session.selectSong(waiting.length > 0 ? waiting[0].id : -1)
+    session.load()
     if (root.tab === "history") root.loadHistory()
-  }
-
-  // Switch the review to another song: its draft replaces the form, so validation
-  // is scoped to it (and the editors are restored once its detail arrives).
-  function selectSong(id) {
-    if (id === root.songId) return
-    root.songId = id
-    root.song = null
-    editGate.draftReplaced(id)
-  }
-
-  function showSong(result) {
-    var replaced = !root.song || root.song.id !== result.id
-    root.song = result
-    if (replaced) editGate.draftReplaced(result.id)
   }
 
   function loadHistory() {
@@ -110,25 +93,13 @@ Item {
     root.run(args, function(result) { root.historySongs = result.songs || [] })
   }
 
-  function songAction(args) {
-    root.run(args, function(result) { if (result.id !== undefined) root.song = result })
-  }
-
-  // Confirm / Replace: only once the reviewed edits are applied, and none was rejected.
+  // Confirm / Replace on the selected song, after the reviewed edits (see ReviewSession).
   function reviewedAction(command) {
     root.commitEditors()
-    var id = String(root.song.id)
-    editGate.afterEdits(function() { root.songAction([command, id]) })
+    session.reviewed(command)
   }
 
-  function edit(field, value) {
-    if (!root.song || !root.song.draft) return
-    var current = root.song.draft[field]
-    if (field === "artists") current = (current || []).join("; ")
-    if (field.indexOf("mbid_") === 0) current = (root.song.draft.mbids || {})[field.slice(5)]
-    if (String(current === null || current === undefined ? "" : current) === String(value) && !editGate.isInvalid(field)) return
-    editGate.edit(root.song.id, field, value)
-  }
+  function edit(field, value) { session.edit(field, value) }
 
   function proposalLabel(proposal) {
     return proposal.origin === "codex" ? Strings.codexProposal(proposal.confidence) : Strings.defaultProposal
@@ -207,7 +178,7 @@ Item {
     // saved value again when the draft is replaced (even if that value compares equal).
     onValueChanged: input.text = field.value
     Connections {
-      target: editGate
+      target: session.gate
       function onRestore() { input.text = field.value }
     }
     Label {
@@ -222,7 +193,7 @@ Item {
       radius: root.radius
       color: "transparent"
       border.width: 1
-      border.color: field.name && editGate.isInvalid(field.name) ? root.urgent
+      border.color: field.name && session.gate.isInvalid(field.name) ? root.urgent
         : (input.activeFocus ? root.accent : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3))
       TextInput {
         id: input
@@ -365,7 +336,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                       root.commitEditors()
-                      root.selectSong(waitingLabel.modelData.id)
+                      session.selectSong(waitingLabel.modelData.id)
                       root.refresh()
                     }
                   }
@@ -455,10 +426,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                       root.commitEditors()
-                      root.run(["select", String(root.song.id), String(proposalCard.index)], function(result) {
-                        root.song = result
-                        editGate.draftReplaced(result.id)
-                      })
+                      session.selectProposal(proposalCard.index)
                     }
                   }
                 }
@@ -527,7 +495,7 @@ Item {
                 }
                 Action {
                   label: Strings.coverThumbnail
-                  onClicked: root.songAction(["cover", String(root.song.id), "--thumbnail"])
+                  onClicked: session.act(["cover", "--thumbnail"])
                 }
                 Field {
                   id: coverUrl
@@ -538,7 +506,7 @@ Item {
                 }
                 Action {
                   label: Strings.coverUrl
-                  onClicked: if (coverUrl.value) root.songAction(["cover", String(root.song.id), "--url", coverUrl.value])
+                  onClicked: if (coverUrl.value) session.act(["cover", "--url", coverUrl.value])
                 }
                 Field {
                   id: coverFile
@@ -549,7 +517,7 @@ Item {
                 }
                 Action {
                   label: Strings.coverFile
-                  onClicked: if (coverFile.value) root.songAction(["cover", String(root.song.id), "--file", coverFile.value])
+                  onClicked: if (coverFile.value) session.act(["cover", "--file", coverFile.value])
                 }
               }
             }
@@ -559,12 +527,12 @@ Item {
               spacing: root.gap
               Action {
                 label: Strings.preview
-                onClicked: root.run(["preview", String(root.song.id)])
+                onClicked: session.preview()
               }
               Action {
                 label: Strings.discard
                 danger: true
-                onClicked: root.songAction(["discard", String(root.song.id)])
+                onClicked: session.act(["discard"])
               }
               Action {
                 visible: !!root.song && root.song.state === "conflict"
