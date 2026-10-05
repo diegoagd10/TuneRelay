@@ -84,3 +84,12 @@ var trackOf = function(n, total) { return "track " + n + "/" + total }
 var errorPrefix = "Error: "
 var noAnswer = "no answer from tunerelay"
 var fixFieldsFirst = "Fix the highlighted fields before confirming."
+
+// Key hints (see Keys.js); `?` hides them.
+var keyHints = {
+  review: "j/k song · 1–4 proposal · e edit · p preview · c compilation · t thumbnail · o YouTube · Ctrl+Enter confirm · Shift+D discard",
+  queue: "j/k scroll",
+  history: "/ search · f filter · j/k song · o YouTube · r retry"
+}
+var keyHintsCommon = "Alt+1–3 tabs · Esc close · ? hide"
+var keyHintsEditing = "Tab next field · Esc done · Ctrl+Enter confirm"

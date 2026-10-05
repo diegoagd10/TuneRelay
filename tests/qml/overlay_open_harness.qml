@@ -12,6 +12,7 @@ ShellRoot {
   QtObject {
     id: service
     property var status: ({ review_songs: [], queue: [] })
+    function run(args, callback) { callback({ songs: [] }) }
   }
 
   QtObject {
@@ -34,6 +35,16 @@ ShellRoot {
         item.open("{}")
         root.log.push("opened=" + item.opened)
         root.log.push("service injected=" + (item.service === service))
+        item.command("tab-next")
+        root.log.push("tab=" + item.tab)
+        item.command("tab-previous")
+        item.command("tab-previous")
+        root.log.push("tab=" + item.tab)
+        item.command("help")
+        root.log.push("hints=" + item.showHints)
+        item.command("song-next")
+        item.command("discard")
+        root.log.push("no song, no error")
         item.close()
         root.log.push("closed=" + item.opened)
       } catch (error) {
