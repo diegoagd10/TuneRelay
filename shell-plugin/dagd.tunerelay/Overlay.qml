@@ -82,13 +82,25 @@ Item {
     var waiting = root.status.review_songs || []
     var stillWaiting = false
     for (var i = 0; i < waiting.length; i++) if (waiting[i].id === root.songId) stillWaiting = true
-    if (!stillWaiting) {
-      root.songId = waiting.length > 0 ? waiting[0].id : -1
-      editGate.reset()
-    }
-    if (root.songId >= 0) root.run(["show", String(root.songId)], function(result) { root.song = result })
+    if (!stillWaiting) root.selectSong(waiting.length > 0 ? waiting[0].id : -1)
+    if (root.songId >= 0) root.run(["show", String(root.songId)], root.showSong)
     else root.song = null
     if (root.tab === "history") root.loadHistory()
+  }
+
+  // Switch the review to another song: its draft replaces the form, so validation
+  // is scoped to it (and the editors are restored once its detail arrives).
+  function selectSong(id) {
+    if (id === root.songId) return
+    root.songId = id
+    root.song = null
+    editGate.draftReplaced(id)
+  }
+
+  function showSong(result) {
+    var replaced = !root.song || root.song.id !== result.id
+    root.song = result
+    if (replaced) editGate.draftReplaced(result.id)
   }
 
   function loadHistory() {
@@ -191,8 +203,13 @@ Item {
     property int inputWidth: 200
     signal committed(string text)
     spacing: root.gap / 2
-    // Typing breaks the text binding; follow the draft again when it changes (e.g. another proposal).
+    // Typing breaks the text binding: follow the draft when it changes, and always show the
+    // saved value again when the draft is replaced (even if that value compares equal).
     onValueChanged: input.text = field.value
+    Connections {
+      target: editGate
+      function onRestore() { input.text = field.value }
+    }
     Label {
       width: 96
       anchors.verticalCenter: parent.verticalCenter
@@ -347,7 +364,8 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                      root.songId = waitingLabel.modelData.id
+                      root.commitEditors()
+                      root.selectSong(waitingLabel.modelData.id)
                       root.refresh()
                     }
                   }
@@ -438,8 +456,8 @@ Item {
                     onClicked: {
                       root.commitEditors()
                       root.run(["select", String(root.song.id), String(proposalCard.index)], function(result) {
-                        editGate.reset()
                         root.song = result
+                        editGate.draftReplaced(result.id)
                       })
                     }
                   }
