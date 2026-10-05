@@ -3,7 +3,8 @@
 #   - the `tunerelay` and `tunerelay-host` executables (uv tool),
 #   - the native messaging host manifest for Brave, Chrome and Chromium,
 #   - the `tunerelay` systemd --user service (the daemon),
-#   - the Omarchy shell plugin (symlinked, so `git pull` updates it),
+#   - the Omarchy shell plugin (symlinked to this checkout),
+#   - a restart of the running Omarchy shell to load updated QML,
 #   - a default ~/.tunerelay/config.toml (never overwritten).
 # The browser extension is loaded by hand once; see the message at the end.
 
@@ -68,6 +69,18 @@ mkdir -p "$HOME/.config/omarchy/plugins"
 ln -sfn "$REPO/shell-plugin/dagd.tunerelay" "$HOME/.config/omarchy/plugins/dagd.tunerelay"
 
 "$BIN/tunerelay" status >/dev/null
+
+# A plugin rescan can reuse the old QML components from the running engine.
+# Restart the shell after linking so updates actually reach the live window.
+if command -v omarchy >/dev/null && command -v omarchy-shell >/dev/null && \
+  omarchy-shell shell ping >/dev/null 2>&1; then
+  echo "Restarting the Omarchy shell to load the updated TuneRelay window…"
+  if ! omarchy restart shell; then
+    echo "warning: the updated window is not loaded; run: omarchy restart shell" >&2
+  fi
+else
+  echo "To load the updated window in a desktop session, run: omarchy restart shell"
+fi
 
 # Suggest a global key for the window. TuneRelay never edits the Hyprland config:
 # two bindings on one key both run, so suggest the first candidate that is free.

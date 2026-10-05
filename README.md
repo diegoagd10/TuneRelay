@@ -34,6 +34,17 @@ State lives in `~/.tunerelay/tunerelay.db` (SQLite). Server settings live in
 Then follow the printed steps: load `extension/` unpacked once, add the
 widget to the bar, and fill in `[delivery]` and `[scan]` in the config.
 
+To update an existing installation:
+
+```sh
+git pull --ff-only
+./install.sh
+```
+
+The installer restarts a running Omarchy shell to load the updated window.
+A plugin rescan can keep old QML in memory. If the installer reports that it
+could not load the window, run `omarchy restart shell` from the desktop session.
+
 ## Keyboard
 
 The bar icon opens the TuneRelay window. For a global key, bind

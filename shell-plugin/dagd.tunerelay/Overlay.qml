@@ -388,7 +388,7 @@ Item {
         visible: root.showHints
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: Style.spacing.panelPadding }
         text: root.focusedFields > 0 ? Strings.keyHintsEditing : Strings.keyHints[root.tab] + "   " + Strings.keyHintsCommon
-        opacity: 0.5
+        opacity: 0.8
         wrapMode: Text.WordWrap
       }
 
