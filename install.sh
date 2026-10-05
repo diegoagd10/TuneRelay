@@ -69,6 +69,42 @@ ln -sfn "$REPO/shell-plugin/dagd.tunerelay" "$HOME/.config/omarchy/plugins/dagd.
 
 "$BIN/tunerelay" status >/dev/null
 
+# Suggest a global key for the window. TuneRelay never edits the Hyprland config:
+# two bindings on one key both run, so suggest the first candidate that is free.
+TOGGLE="omarchy-shell shell toggle dagd.tunerelay"
+suggest_key() {
+  local binds
+  binds=$(hyprctl binds -j 2>/dev/null) || return 1
+  python3 - "$TOGGLE" "$binds" <<'PY'
+import json, sys
+
+toggle, binds = sys.argv[1], [b for b in json.loads(sys.argv[2]) if not b.get("submap")]
+names = [(64, "SUPER"), (4, "CTRL"), (1, "SHIFT"), (8, "ALT")]
+
+def combo(mask, key):
+    return " + ".join([name for bit, name in names if mask & bit] + [key.upper()])
+
+for b in binds:
+    if b.get("description") == "TuneRelay":
+        print(f"     Already bound to {combo(b['modmask'], b['key'])}.")
+        sys.exit()
+taken = {(b["modmask"], b["key"].upper()): b.get("description") or b["dispatcher"] for b in binds}
+for mask in (64 | 4, 64 | 4 | 1, 64 | 4 | 8):
+    if (mask, "M") in taken:
+        print(f"     {combo(mask, 'M')} is taken ({taken[(mask, 'M')]}).")
+        continue
+    print("     Add to ~/.config/hypr/bindings.lua:")
+    print(f'       o.bind("{combo(mask, "M")}", "TuneRelay", "{toggle}")')
+    sys.exit()
+print(f'     All suggested keys are taken: bind "{toggle}" to a key of your choice.')
+PY
+}
+if ! key_hint=$(suggest_key); then
+  key_hint="     Could not ask Hyprland which keys are free; check \`omarchy menu keybindings --print\`, then
+     add to ~/.config/hypr/bindings.lua:
+       o.bind(\"SUPER + CTRL + M\", \"TuneRelay\", \"$TOGGLE\")"
+fi
+
 cat <<DONE
 
 TuneRelay is installed.
@@ -82,4 +118,6 @@ Remaining manual steps:
   3. Fill in the [delivery] and [scan] sections of ~/.tunerelay/config.toml
      (svc-02 hosts, SSH user, music folder, Navidrome URL/user and the pass entry).
   4. Accept svc-02's SSH host key once: ssh <user>@<host> true
+  5. Optional: a global key to open the TuneRelay window (the bar icon works too).
+$key_hint
 DONE

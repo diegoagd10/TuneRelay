@@ -51,5 +51,9 @@ def test_the_shell_can_inject_the_service_and_open_the_overlay(tmp_path: Path) -
     assert json.loads(lines[-1].split("RESULT ", 1)[1]) == [
         "opened=true",
         "service injected=true",
+        "tab=queue",
+        "tab=history",
+        "hints=false",
+        "no song, no error",
         "closed=false",
     ], output
