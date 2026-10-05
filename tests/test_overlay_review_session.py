@@ -24,11 +24,16 @@ def scenarios() -> list[list[str]]:
 
 
 def test_a_late_show_for_the_previous_song_never_takes_over_the_form(scenarios: list[list[str]]) -> None:
-    assert scenarios[0] == ["late show: selected=5 form=none", "cli confirm 5"]
+    assert scenarios[0] == ["late show: selected=5 form=none", "cli confirm 5", "confirmed saved=1 shown=1"]
 
 
 def test_a_late_proposal_selection_for_the_previous_song_is_dropped(scenarios: list[list[str]]) -> None:
-    assert scenarios[1] == ["cli select 5 1", "late select: selected=3 form=none", "cli confirm 3"]
+    assert scenarios[1] == [
+        "cli select 5 1",
+        "late select: selected=3 form=none",
+        "cli confirm 3",
+        "confirmed saved=1 shown=1",
+    ]
 
 
 def test_a_late_cover_change_for_the_previous_song_is_dropped(scenarios: list[list[str]]) -> None:
@@ -41,3 +46,23 @@ def test_nothing_is_confirmed_before_the_selected_song_has_loaded(scenarios: lis
 
 def test_a_confirm_waiting_on_edits_is_dropped_when_switching_songs(scenarios: list[list[str]]) -> None:
     assert scenarios[4] == ["cli edit 9 track=4", "pending after switch: 0 selected=3 form=3"]
+
+
+def test_an_edit_while_a_proposal_selection_is_pending_never_hides_what_gets_confirmed(
+    scenarios: list[list[str]],
+) -> None:
+    assert scenarios[5] == [
+        "queued while selecting: 1",
+        "cli select 11 0",
+        "cli confirm 11",
+        "confirmed saved=proposal 0 shown=proposal 0",
+    ]
+
+
+def test_a_failed_proposal_selection_unlocks_the_form(scenarios: list[list[str]]) -> None:
+    assert scenarios[6] == [
+        "cli select 12 2",
+        "cli edit 12 track=6",
+        "cli confirm 12",
+        "confirmed saved=6 shown=6",
+    ]

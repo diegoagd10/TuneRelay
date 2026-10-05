@@ -7,6 +7,10 @@ import QtQuick
 // a time), so a response may only replace the form if it is for the song that
 // is selected *now*. Anything for a previously selected song is dropped, and
 // actions always target the selected song, never a stale `song` object.
+//
+// Selecting a proposal replaces the whole draft, so while that request is
+// pending the form is locked (`ready` is false): edits and actions are refused
+// rather than applied on top of a draft the form does not show yet.
 QtObject {
   id: session
 
@@ -15,6 +19,8 @@ QtObject {
   property int songId: -1
   property var song: null
   readonly property bool loaded: session.song !== null && session.song.id === session.songId
+  property bool selecting: false
+  readonly property bool ready: session.loaded && !session.selecting
 
   signal blocked()
 
@@ -37,6 +43,7 @@ QtObject {
     if (id === session.songId) return
     session.songId = id
     session.song = null
+    session.selecting = false
     session.gate.draftReplaced(id)
   }
 
@@ -50,28 +57,39 @@ QtObject {
 
   // A proposal becomes the draft: always restore the editors, even if values are equal.
   function selectProposal(index) {
-    if (!session.loaded) return
-    session.run(["select", String(session.songId), String(index)], function(result) {
-      if (result.id !== session.songId) return
-      session.song = result
-      session.gate.draftReplaced(result.id)
-    })
+    if (!session.ready) return
+    var id = session.songId
+    session.selecting = true
+    session.gate.draftReplaced(id)  // edits sent before this belong to the old draft
+    session.run(["select", String(id), String(index)],
+      function(result) {
+        if (session.songId !== id) return
+        session.selecting = false
+        if (result.id !== id) return
+        session.song = result
+        session.gate.draftReplaced(id)
+      },
+      function() {
+        if (session.songId !== id) return
+        session.selecting = false
+        session.gate.draftReplaced(id)  // show the unchanged draft again
+      })
   }
 
   function preview() {
-    if (session.loaded) session.run(["preview", String(session.songId)])
+    if (session.ready) session.run(["preview", String(session.songId)])
   }
 
   // An action on the selected song whose answer is that song (cover, discard).
   function act(args) {
-    if (!session.loaded) return
+    if (!session.ready) return
     session.run([args[0], String(session.songId)].concat(args.slice(1)), session.accept)
   }
 
   // Confirm / Replace: only once the reviewed edits are applied and none was rejected,
   // and only for the song that was selected when the user asked.
   function reviewed(command) {
-    if (!session.loaded) return
+    if (!session.ready) return
     var id = session.songId
     session.gate.afterEdits(function() {
       if (session.songId !== id) return
@@ -80,7 +98,7 @@ QtObject {
   }
 
   function edit(field, value) {
-    if (!session.loaded || !session.song.draft) return
+    if (!session.ready || !session.song.draft) return
     var draft = session.song.draft
     var current = draft[field]
     if (field === "artists") current = (current || []).join("; ")

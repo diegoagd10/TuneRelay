@@ -206,6 +206,8 @@ Item {
         font.pixelSize: Style.font.body
         clip: true
         selectByMouse: true
+        // Draft fields are locked while a proposal selection is replacing the draft.
+        readOnly: field.name !== "" && !session.ready
         onEditingFinished: field.committed(text)
         Label {
           anchors.fill: parent
